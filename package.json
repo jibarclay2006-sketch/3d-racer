@@ -1,0 +1,22 @@
+{
+  "name": "apex-rush-3d",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A complete procedural WebGL arcade racing game.",
+  "scripts": {
+    "start": "python3 -m http.server 8080",
+    "test": "node --test",
+    "check": "node --check src/core.js && node --check src/game.js && node --test"
+  },
+  "devDependencies": {
+    "three": "0.185.1"
+  },
+  "keywords": [
+    "3d-racing-game",
+    "webgl",
+    "threejs",
+    "arcade-racing"
+  ],
+  "license": "MIT"
+}
