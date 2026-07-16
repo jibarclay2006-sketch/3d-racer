@@ -22,6 +22,7 @@ Open `http://localhost:8080`.
 | Steer | A and D / Arrow Keys | Left Stick |
 | Drift | Space | B |
 | Nitro | Shift | X / LB |
+| Recover car | R | — |
 | Pause | P / Escape | Menu |
 | Mute | M | — |
 
@@ -30,6 +31,7 @@ Multi-touch controls appear automatically on phones and tablets.
 ## Included in version 1.0
 
 - Three fully 3D circuits with elevation, distinct handling, boost pads, and themed scenery
+- Free-steering vehicle physics: your heading and momentum determine where the car goes—the track never drives for you
 - Solar Crest at golden hour, rain-soaked Neon Velocity, and snowy Whiteout Pass
 - Seven named AI rivals with skill, corner awareness, lane selection, overtaking, and difficulty scaling
 - Arcade acceleration, braking, grip, drifting, off-road slowdown, barriers, car contact, and camera shake

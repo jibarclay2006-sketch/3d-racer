@@ -9,6 +9,7 @@ import {
   rankRacers,
   seededRandom,
   shortestProgressDelta,
+  steeringYawDelta,
   trackRightVector,
   wrap01
 } from "./core.js";
@@ -65,7 +66,8 @@ const DIFFICULTY = {
 const temp = {
   point: new THREE.Vector3(), point2: new THREE.Vector3(), tangent: new THREE.Vector3(), tangent2: new THREE.Vector3(),
   right: new THREE.Vector3(), matrix: new THREE.Matrix4(), quaternion: new THREE.Quaternion(), scale: new THREE.Vector3(),
-  color: new THREE.Color(), cameraTarget: new THREE.Vector3(), cameraLook: new THREE.Vector3()
+  color: new THREE.Color(), cameraTarget: new THREE.Vector3(), cameraLook: new THREE.Vector3(),
+  forward: new THREE.Vector3(), velocityTarget: new THREE.Vector3(), delta: new THREE.Vector3()
 };
 
 function safeStorageGet(key, fallback = null) {
@@ -345,7 +347,10 @@ class ApexRush {
     return {
       id: "YOU", name: "YOU", distance: 0, offset: 0, lateralVelocity: 0, speed: 0, nitro: 100,
       driftScore: 0, driftChain: 0, driftTime: 0, finishedAt: null, lap: 0, lastLapAt: 0,
-      bestLap: null, model: null, position: 4, boostActive: false, offroad: false, driftActive: false
+      bestLap: null, model: null, position: 4, boostActive: false, offroad: false, driftActive: false,
+      worldPosition: new THREE.Vector3(), velocity: new THREE.Vector3(), trackTangent: new THREE.Vector3(0, 0, 1),
+      trackRight: new THREE.Vector3(-1, 0, 0), heading: 0, steering: 0, trackProgress: 0,
+      nearestSampleIndex: 0, recoveryTimer: 0, wrongWayTimer: 0
     };
   }
 
@@ -408,6 +413,7 @@ class ApexRush {
       if (event.code === "Enter" && this.state === "menu") this.startRace();
       if ((event.code === "Escape" || event.code === "KeyP") && ["racing", "countdown", "paused"].includes(this.state)) this.togglePause();
       if (event.code === "KeyM") this.toggleSound();
+      if (event.code === "KeyR" && ["racing", "countdown"].includes(this.state)) this.recoverPlayer(true);
     });
     window.addEventListener("keyup", (event) => this.keys.delete(event.code));
     window.addEventListener("blur", () => {
@@ -995,6 +1001,13 @@ class ApexRush {
 
   resetRacers() {
     Object.assign(this.player, this.makePlayerState(), { model: this.player.model });
+    roadFrame(this.curve, 0, temp.point, temp.tangent, temp.right);
+    this.player.worldPosition.copy(temp.point);
+    this.player.worldPosition.y += .42;
+    this.player.trackTangent.copy(temp.tangent);
+    this.player.trackRight.copy(temp.right);
+    this.player.heading = Math.atan2(temp.tangent.x, temp.tangent.z);
+    this.player.trackProgress = 0;
     const startingDistances = [7.5, 3.5, -2.5, -7, -11.5, -16, -20.5];
     const startingLanes = [-2.3, 2.3, -2.3, 2.3, -2.3, 2.3, 0];
     this.ai.forEach((racer, index) => {
@@ -1166,6 +1179,80 @@ class ApexRush {
     }
   }
 
+  findNearestTrackSample(position) {
+    let bestIndex = 0;
+    let bestDistanceSq = Infinity;
+    for (let index = 0; index < this.trackSamples.length; index += 1) {
+      const sample = this.trackSamples[index];
+      const dx = position.x - sample.point.x;
+      const dz = position.z - sample.point.z;
+      const distanceSq = dx * dx + dz * dz;
+      if (distanceSq < bestDistanceSq) {
+        bestDistanceSq = distanceSq;
+        bestIndex = index;
+      }
+    }
+    return this.trackSamples[bestIndex];
+  }
+
+  updatePlayerTrackProjection(dt, countProgress = true) {
+    const player = this.player;
+    const previousProgress = player.trackProgress;
+    const sample = this.findNearestTrackSample(player.worldPosition);
+    const dx = player.worldPosition.x - sample.point.x;
+    const dz = player.worldPosition.z - sample.point.z;
+    player.nearestSampleIndex = Math.round(sample.t * this.trackSamples.length) % this.trackSamples.length;
+    player.trackProgress = sample.t;
+    player.trackTangent.copy(sample.tangent);
+    player.trackRight.copy(sample.right);
+    player.offset = dx * sample.right.x + dz * sample.right.z;
+    player.lateralVelocity = player.velocity.dot(sample.right);
+
+    if (countProgress) {
+      const progressDelta = shortestProgressDelta(player.trackProgress, previousProgress);
+      // Normal driving only moves a few samples per frame. Ignoring large jumps
+      // prevents cutting across the circuit from awarding race distance.
+      if (Math.abs(progressDelta) < .045) player.distance += progressDelta * this.trackLength;
+    }
+
+    player.worldPosition.y = damp(player.worldPosition.y, sample.point.y + .42, 13, dt);
+    const roadHalf = TRACK_DEFS[this.trackIndex].roadWidth * .5;
+    player.offroad = Math.abs(player.offset) > roadHalf - .55;
+
+    const forwardAlongTrack = player.velocity.dot(sample.tangent);
+    if (forwardAlongTrack < -5) {
+      player.wrongWayTimer += dt;
+      if (player.wrongWayTimer > 1.2 && player.wrongWayTimer - dt <= 1.2) this.showFeed("WRONG WAY");
+    } else {
+      player.wrongWayTimer = 0;
+    }
+
+    if (Math.abs(player.offset) > roadHalf + 9 && player.speed < 7) player.recoveryTimer += dt;
+    else player.recoveryTimer = 0;
+    if (Math.abs(player.offset) > 55 || player.recoveryTimer > 2.2) this.recoverPlayer(false);
+  }
+
+  recoverPlayer(manual = false) {
+    if (!this.curve || !this.player.worldPosition) return;
+    const player = this.player;
+    const sample = this.trackSamples[player.nearestSampleIndex] || this.findNearestTrackSample(player.worldPosition);
+    const roadHalf = TRACK_DEFS[this.trackIndex].roadWidth * .5;
+    const lane = clamp(player.offset, -roadHalf * .35, roadHalf * .35);
+    player.worldPosition.copy(sample.point).addScaledVector(sample.right, lane);
+    player.worldPosition.y += .42;
+    player.heading = Math.atan2(sample.tangent.x, sample.tangent.z);
+    player.velocity.copy(sample.tangent).multiplyScalar(Math.min(player.speed, 12));
+    player.speed = player.velocity.length();
+    player.steering = 0;
+    player.lateralVelocity = 0;
+    player.trackProgress = sample.t;
+    player.trackTangent.copy(sample.tangent);
+    player.trackRight.copy(sample.right);
+    player.recoveryTimer = 0;
+    this.cameraShake = Math.max(this.cameraShake, .16);
+    if (this.state === "racing") this.showFeed(manual ? "CAR RECOVERED" : "AUTO RECOVERY");
+  }
+
   updateRace(dt) {
     const definition=TRACK_DEFS[this.trackIndex];
     const input=this.getInput();
@@ -1174,9 +1261,7 @@ class ApexRush {
     this.collisionCooldown=Math.max(0,this.collisionCooldown-dt);
     this.boostCooldown=Math.max(0,this.boostCooldown-dt);
 
-    const speedRatio=clamp(player.speed/definition.maxSpeed,0,1.25);
-    const onRoad=Math.abs(player.offset)<definition.roadWidth*.5-.55;
-    player.offroad=!onRoad;
+    const onRoad=!player.offroad;
     const canDrift=input.drift&&Math.abs(input.steer)>.12&&player.speed>13&&onRoad;
     player.driftActive=canDrift;
 
@@ -1198,34 +1283,37 @@ class ApexRush {
     this.wasNitro=useNitro;
 
     const speedLimit=(onRoad?definition.maxSpeed:(definition.maxSpeed*.52))+(useNitro?15:0);
-    player.speed=clamp(player.speed+acceleration*dt,0,speedLimit);
+    const targetSpeed=clamp(player.speed+acceleration*dt,0,speedLimit);
+    player.steering=damp(player.steering,input.steer,10,dt);
 
-    const steerStrength=(canDrift?23:16)*(0.22+speedRatio*.9);
-    player.lateralVelocity+=input.steer*steerStrength*dt;
-    player.lateralVelocity*=Math.exp(-(canDrift?1.35:5.7)*dt);
-    if (Math.abs(input.steer)<.05&&!canDrift) player.lateralVelocity=damp(player.lateralVelocity,-player.offset*.42,2.2,dt);
-    player.offset+=player.lateralVelocity*dt;
-
-    const hardLimit=definition.roadWidth*.5+2.05;
-    if (Math.abs(player.offset)>hardLimit) {
-      player.offset=clamp(player.offset,-hardLimit,hardLimit);
-      if (this.collisionCooldown<=0) this.handleImpact(Math.sign(player.offset),.58);
-      player.lateralVelocity*=-.36;
-    }
+    // Free-world arcade steering. The heading—not the track spline—determines
+    // where the car travels. Positive input is screen-right, hence negative yaw.
+    const surfaceSteer=onRoad?1:.58;
+    player.heading+=steeringYawDelta(player.steering,player.speed,dt,canDrift,surfaceSteer);
+    temp.forward.set(Math.sin(player.heading),0,Math.cos(player.heading)).normalize();
+    if (player.speed>.05) player.velocity.multiplyScalar(targetSpeed/player.speed);
+    else player.velocity.copy(temp.forward).multiplyScalar(targetSpeed);
+    temp.velocityTarget.copy(temp.forward).multiplyScalar(targetSpeed);
+    const traction=canDrift?1.45:onRoad?7.8:2.7;
+    player.velocity.x=damp(player.velocity.x,temp.velocityTarget.x,traction,dt);
+    player.velocity.z=damp(player.velocity.z,temp.velocityTarget.z,traction,dt);
+    if (input.brake&&targetSpeed<1) player.velocity.multiplyScalar(Math.exp(-12*dt));
+    player.worldPosition.addScaledVector(player.velocity,dt);
+    player.speed=Math.hypot(player.velocity.x,player.velocity.z);
+    this.updatePlayerTrackProjection(dt,true);
 
     if (canDrift) {
       player.driftTime+=dt;
-      player.driftChain+=player.speed*dt*(1+Math.abs(player.lateralVelocity)*.13);
+      player.driftChain+=player.speed*dt*(1+Math.abs(player.lateralVelocity)*.1);
       player.driftScore+=player.speed*dt*(.75+Math.abs(input.steer)*.65);
-      this.spawnTireParticles(dt,onRoad?0xa8b1b7:0x9d815d);
+      this.spawnTireParticles(dt,0xa8b1b7);
     } else if (player.driftTime>.25) {
       const earned=Math.round(player.driftChain);
       if (earned>70) this.showFeed(`DRIFT +${earned}`);
       player.driftTime=0;player.driftChain=0;
     }
-    if (!onRoad&&player.speed>8) this.spawnTireParticles(dt,this.trackIndex===2?0xe7f1f4:0x9a7b55,true);
+    if (player.offroad&&player.speed>8) this.spawnTireParticles(dt,this.trackIndex===2?0xe7f1f4:0x9a7b55,true);
 
-    player.distance+=player.speed*dt;
     this.checkBoostPads();
     this.updateAI(dt);
     this.checkVehicleCollisions();
@@ -1235,7 +1323,7 @@ class ApexRush {
 
     document.body.classList.toggle("is-nitro",useNitro);
     ui.speedLines.classList.toggle("active",useNitro);
-    this.audio.update(speedRatio,input.throttle,canDrift,useNitro,true);
+    this.audio.update(clamp(player.speed/definition.maxSpeed,0,1.25),input.throttle,canDrift,useNitro,true);
   }
 
   updateAI(dt) {
@@ -1270,14 +1358,15 @@ class ApexRush {
   checkVehicleCollisions() {
     if (this.collisionCooldown>0) return;
     for (const racer of this.ai) {
-      const longitudinal=shortestProgressDelta(this.player.distance/this.trackLength,racer.distance/this.trackLength)*this.trackLength;
-      const lateral=this.player.offset-racer.offset;
-      if (Math.abs(longitudinal)<3.6&&Math.abs(lateral)<1.65) {
-        this.player.speed*=.76;
+      const dx=this.player.worldPosition.x-racer.model.position.x;
+      const dz=this.player.worldPosition.z-racer.model.position.z;
+      if (dx*dx+dz*dz<10.6) {
+        temp.delta.set(dx,0,dz).normalize();
+        const side=Math.sign(temp.delta.dot(this.player.trackRight)||1);
+        this.player.worldPosition.addScaledVector(temp.delta,.5);
         racer.speed*=.88;
-        this.player.lateralVelocity+=Math.sign(lateral||1)*5.2;
-        racer.offset-=Math.sign(lateral||1)*.55;
-        this.handleImpact(Math.sign(lateral||1),.36);
+        racer.offset-=side*.55;
+        this.handleImpact(side,.36);
         this.showFeed(`CONTACT · ${racer.name}`);
         break;
       }
@@ -1286,24 +1375,29 @@ class ApexRush {
 
   handleImpact(side,strength) {
     this.collisionCooldown=.72;
-    this.player.speed*=1-strength*.45;
+    this.player.velocity.multiplyScalar(1-strength*.45).addScaledVector(this.player.trackRight,side*strength*4.5);
+    this.player.speed=this.player.velocity.length();
     this.cameraShake=Math.max(this.cameraShake,strength);
     this.audio.impact();
     document.body.classList.remove("low-health");
     void document.body.offsetWidth;
     document.body.classList.add("low-health");
-    roadFrame(this.curve,this.player.distance/this.trackLength,temp.point,temp.tangent,temp.right);
-    const position=temp.point.clone().addScaledVector(temp.right,this.player.offset);position.y+=.7;
+    const position=this.player.worldPosition.clone();position.y+=.45;
     for(let i=0;i<8;i+=1)this.particles.spawn(position,new THREE.Vector3((Math.random()-.5)*7,Math.random()*4,(Math.random()-.5)*7),0xffb44d,.45+Math.random()*.35);
-    this.player.lateralVelocity-=side*2.5;
   }
 
   checkBoostPads() {
     if (this.boostCooldown>0) return;
-    const progress=wrap01(this.player.distance/this.trackLength);
-    const pad=this.boostPads.find(item=>Math.abs(shortestProgressDelta(progress,item.t))<.0065&&Math.abs(this.player.offset)<3.1);
+    const pad=this.boostPads.find(item=>{
+      const dx=this.player.worldPosition.x-item.model.position.x;
+      const dz=this.player.worldPosition.z-item.model.position.z;
+      return dx*dx+dz*dz<13;
+    });
     if (!pad) return;
-    this.player.speed=Math.min(this.player.speed+10,TRACK_DEFS[this.trackIndex].maxSpeed+13);
+    temp.forward.set(Math.sin(this.player.heading),0,Math.cos(this.player.heading));
+    this.player.velocity.addScaledVector(temp.forward,10);
+    this.player.speed=Math.min(this.player.velocity.length(),TRACK_DEFS[this.trackIndex].maxSpeed+13);
+    if (this.player.velocity.length()>this.player.speed) this.player.velocity.setLength(this.player.speed);
     this.player.nitro=Math.min(100,this.player.nitro+17);
     this.boostCooldown=1.3;
     this.cameraShake=.18;
@@ -1345,23 +1439,32 @@ class ApexRush {
 
   placeVehicle(racer,dt,isPlayer) {
     if (!racer.model) return;
-    const t=wrap01(racer.distance/this.trackLength);
-    roadFrame(this.curve,t,temp.point,temp.tangent,temp.right);
-    const position=temp.point.clone().addScaledVector(temp.right,racer.offset);
-    const rideHeight=isPlayer?.42:.4;
-    position.y+=rideHeight;
-    racer.model.position.copy(position);
-    const driftYaw=isPlayer?clamp(-racer.lateralVelocity*.035,-.23,.23):0;
-    const horizontal=Math.hypot(temp.tangent.x,temp.tangent.z);
     racer.model.rotation.order="YXZ";
-    racer.model.rotation.y=Math.atan2(temp.tangent.x,temp.tangent.z)+driftYaw;
-    racer.model.rotation.x=-Math.atan2(temp.tangent.y,horizontal);
-    racer.model.rotation.z=damp(racer.model.rotation.z,isPlayer?-racer.lateralVelocity*.016:0,7,Math.max(dt,.001));
+    const freePlayer=isPlayer&&!["menu","loading"].includes(this.state);
+    if (freePlayer) {
+      racer.model.position.copy(racer.worldPosition);
+      const horizontal=Math.hypot(racer.trackTangent.x,racer.trackTangent.z);
+      racer.model.rotation.y=racer.heading;
+      racer.model.rotation.x=Math.abs(racer.offset)<TRACK_DEFS[this.trackIndex].roadWidth
+        ?-Math.atan2(racer.trackTangent.y,horizontal):0;
+      const bodyRoll=-racer.steering*.075-clamp(racer.lateralVelocity*.012,-.12,.12);
+      racer.model.rotation.z=damp(racer.model.rotation.z,bodyRoll,7,Math.max(dt,.001));
+    } else {
+      const t=wrap01(racer.distance/this.trackLength);
+      roadFrame(this.curve,t,temp.point,temp.tangent,temp.right);
+      const position=temp.point.clone().addScaledVector(temp.right,racer.offset);
+      position.y += isPlayer ? .42 : .4;
+      racer.model.position.copy(position);
+      const horizontal=Math.hypot(temp.tangent.x,temp.tangent.z);
+      racer.model.rotation.y=Math.atan2(temp.tangent.x,temp.tangent.z);
+      racer.model.rotation.x=-Math.atan2(temp.tangent.y,horizontal);
+      racer.model.rotation.z=damp(racer.model.rotation.z,0,7,Math.max(dt,.001));
+    }
     const wheelSpin=(racer.speed||0)*dt/.39;
     racer.model.userData.wheels.forEach((wheel,wheelIndex)=>{
       wheel.children[0].rotation.x-=wheelSpin;
       wheel.children[1].rotation.x-=wheelSpin;
-      if (isPlayer&&wheelIndex%2===1) wheel.rotation.y=damp(wheel.rotation.y,clamp(-racer.lateralVelocity*.04,-.35,.35),8,Math.max(dt,.001));
+      if (isPlayer&&wheelIndex%2===1) wheel.rotation.y=damp(wheel.rotation.y,clamp(-racer.steering*.42,-.42,.42),10,Math.max(dt,.001));
     });
     if (isPlayer) {
       racer.model.userData.underglow.material.opacity=racer.boostActive?.55:.2;
@@ -1371,22 +1474,24 @@ class ApexRush {
 
   spawnTireParticles(dt,color,heavy=false) {
     if (Math.random()>dt*(heavy?70:46)) return;
-    roadFrame(this.curve,this.player.distance/this.trackLength,temp.point,temp.tangent,temp.right);
+    temp.forward.set(Math.sin(this.player.heading),0,Math.cos(this.player.heading));
+    trackRightVector(temp.forward.x,temp.forward.z,temp.right);
     for (const side of [-1,1]) {
-      const position=temp.point.clone().addScaledVector(temp.right,this.player.offset+side*.68).addScaledVector(temp.tangent,-1.4);
-      position.y+=.25;
-      const velocity=temp.tangent.clone().multiplyScalar(-1.5-Math.random()*2).add(new THREE.Vector3((Math.random()-.5)*1.3,.35+Math.random(),(Math.random()-.5)*1.3));
+      const position=this.player.worldPosition.clone().addScaledVector(temp.right,side*.68).addScaledVector(temp.forward,-1.4);
+      position.y-=.18;
+      const velocity=temp.forward.clone().multiplyScalar(-1.5-Math.random()*2).add(new THREE.Vector3((Math.random()-.5)*1.3,.35+Math.random(),(Math.random()-.5)*1.3));
       this.particles.spawn(position,velocity,color,.55+Math.random()*.55,heavy?1.4:1);
     }
   }
 
   spawnBoostParticles(dt) {
     if (Math.random()>dt*85) return;
-    roadFrame(this.curve,this.player.distance/this.trackLength,temp.point,temp.tangent,temp.right);
+    temp.forward.set(Math.sin(this.player.heading),0,Math.cos(this.player.heading));
+    trackRightVector(temp.forward.x,temp.forward.z,temp.right);
     for (const side of [-1,1]) {
-      const position=temp.point.clone().addScaledVector(temp.right,this.player.offset+side*.47).addScaledVector(temp.tangent,-2.15);
-      position.y+=.54;
-      const velocity=temp.tangent.clone().multiplyScalar(-7-Math.random()*7).add(new THREE.Vector3((Math.random()-.5),Math.random()*.6,(Math.random()-.5)));
+      const position=this.player.worldPosition.clone().addScaledVector(temp.right,side*.47).addScaledVector(temp.forward,-2.15);
+      position.y+=.12;
+      const velocity=temp.forward.clone().multiplyScalar(-7-Math.random()*7).add(new THREE.Vector3((Math.random()-.5),Math.random()*.6,(Math.random()-.5)));
       this.particles.spawn(position,velocity,Math.random()>.4?0x52efff:0xffffff,.2+Math.random()*.28);
     }
   }
@@ -1407,12 +1512,13 @@ class ApexRush {
       return;
     }
 
-    roadFrame(this.curve,this.player.distance/this.trackLength,temp.point,temp.tangent,temp.right);
+    temp.forward.set(Math.sin(this.player.heading),0,Math.cos(this.player.heading)).normalize();
+    trackRightVector(temp.forward.x,temp.forward.z,temp.right);
     const speedRatio=clamp(this.player.speed/TRACK_DEFS[this.trackIndex].maxSpeed,0,1.3);
     const mobile=window.innerWidth<760;
     const distance=(mobile?9.3:8.4)+speedRatio*2.6;
     const height=(mobile?4.6:3.9)+speedRatio*.7;
-    temp.cameraTarget.copy(this.player.model.position).addScaledVector(temp.tangent,-distance).addScaledVector(temp.right,-this.player.lateralVelocity*.028);
+    temp.cameraTarget.copy(this.player.model.position).addScaledVector(temp.forward,-distance).addScaledVector(temp.right,-this.player.lateralVelocity*.028);
     temp.cameraTarget.y+=height;
     if (this.cameraShake>.001) {
       const shake=this.cameraShake*this.cameraShake;
@@ -1422,7 +1528,7 @@ class ApexRush {
       this.cameraShake=Math.max(0,this.cameraShake-dt*1.8);
     }
     this.camera.position.lerp(temp.cameraTarget,1-Math.exp(-(this.player.boostActive?8:6)*dt));
-    temp.cameraLook.copy(this.player.model.position).addScaledVector(temp.tangent,8+speedRatio*6);
+    temp.cameraLook.copy(this.player.model.position).addScaledVector(temp.forward,8+speedRatio*6);
     temp.cameraLook.y+=1.1;
     this.camera.lookAt(temp.cameraLook);
     const targetFov=66+speedRatio*7+(this.player.boostActive?8:0);
@@ -1493,8 +1599,11 @@ class ApexRush {
     points.forEach((p,i)=>{const [x,y]=project(p);i?ctx.lineTo(x,y):ctx.moveTo(x,y);});ctx.closePath();ctx.strokeStyle="rgba(5,8,14,.62)";ctx.lineWidth=9;ctx.stroke();ctx.strokeStyle="rgba(235,243,255,.43)";ctx.lineWidth=2;ctx.stroke();
     const racers=[...this.ai,this.player];
     racers.forEach(racer=>{
-      roadFrame(this.curve,racer.distance/this.trackLength,temp.point,temp.tangent,temp.right);
-      temp.point.addScaledVector(temp.right,racer.offset);
+      if (racer===this.player&&!["menu","loading"].includes(this.state)) temp.point.copy(racer.worldPosition);
+      else {
+        roadFrame(this.curve,racer.distance/this.trackLength,temp.point,temp.tangent,temp.right);
+        temp.point.addScaledVector(temp.right,racer.offset);
+      }
       const [x,y]=project(temp.point);
       ctx.beginPath();ctx.arc(x,y,racer===this.player?4.2:2.5,0,Math.PI*2);ctx.fillStyle=racer===this.player?"#fff":`#${racer.color.toString(16).padStart(6,"0")}`;ctx.shadowBlur=racer===this.player?9:3;ctx.shadowColor=ctx.fillStyle;ctx.fill();ctx.shadowBlur=0;
     });
@@ -1535,7 +1644,14 @@ class ApexRush {
     if (this.state==="menu") this.updateAttract(dt);
     else if (this.state==="countdown") {this.updateCountdown(dt);this.placeAllRacers(dt);this.audio.update(0,0,false,false,true);}
     else if (this.state==="racing") this.updateRace(dt);
-    else if (this.state==="finished") {this.player.speed=Math.max(0,this.player.speed-dt*6);this.player.distance+=this.player.speed*dt;this.placeAllRacers(dt);this.audio.update(this.player.speed/TRACK_DEFS[this.trackIndex].maxSpeed,0,false,false,false);}
+    else if (this.state==="finished") {
+      this.player.velocity.multiplyScalar(Math.exp(-1.8*dt));
+      this.player.worldPosition.addScaledVector(this.player.velocity,dt);
+      this.player.speed=this.player.velocity.length();
+      this.updatePlayerTrackProjection(dt,false);
+      this.placeAllRacers(dt);
+      this.audio.update(this.player.speed/TRACK_DEFS[this.trackIndex].maxSpeed,0,false,false,false);
+    }
     this.particles.update(dt);
     this.updateWeather(dt);
     this.updateBoostVisuals();
@@ -1554,8 +1670,21 @@ class ApexRush {
       skipCountdown:()=>{this.race.countdown=-1;},
       setTimeScale:(value)=>{this.debugTimeScale=clamp(Number(value)||1,.25,12);},
       setControl:(name,active)=>{active?this.touch.add(name):this.touch.delete(name);},
-      advanceToFinish:()=>{this.player.distance=this.race.laps*this.trackLength-8;this.player.speed=45;},
-      snapshot:()=>({state:this.state,track:this.trackIndex,difficulty:this.difficulty,time:this.race.time,lap:this.player.lap,position:this.player.position,speed:this.player.speed,nitro:this.player.nitro,distance:this.player.distance,trackLength:this.trackLength,renderer:this.renderer.info.render,ai:this.ai.map(r=>({name:r.name,distance:r.distance,position:r.position}))}),
+      advanceToFinish:()=>{
+        this.player.distance=this.race.laps*this.trackLength-8;
+        temp.forward.set(Math.sin(this.player.heading),0,Math.cos(this.player.heading));
+        this.player.velocity.copy(temp.forward).multiplyScalar(45);
+        this.player.speed=45;
+      },
+      snapshot:()=>({
+        state:this.state,track:this.trackIndex,difficulty:this.difficulty,time:this.race.time,lap:this.player.lap,
+        position:this.player.position,speed:this.player.speed,nitro:this.player.nitro,distance:this.player.distance,
+        offset:this.player.offset,heading:this.player.heading,steering:this.player.steering,offroad:this.player.offroad,
+        trackProgress:this.player.trackProgress,nearestSampleIndex:this.player.nearestSampleIndex,trackLength:this.trackLength,
+        worldPosition:{x:this.player.worldPosition.x,y:this.player.worldPosition.y,z:this.player.worldPosition.z},
+        velocity:{x:this.player.velocity.x,z:this.player.velocity.z},renderer:this.renderer.info.render,
+        ai:this.ai.map(r=>({name:r.name,distance:r.distance,position:r.position}))
+      }),
       selectTrack:(index)=>{this.trackIndex=clamp(index,0,TRACK_DEFS.length-1);this.buildWorld(this.trackIndex);this.updateMenuUI();},
       instance:this
     };

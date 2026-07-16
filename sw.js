@@ -1,4 +1,4 @@
-const CACHE = "apex-rush-3d-v2";
+const CACHE = "apex-rush-3d-v3";
 const ASSETS = [
   "./", "./index.html", "./style.css", "./manifest.webmanifest", "./assets/icon.svg",
   "./src/core.js", "./src/game.js", "./vendor/three.module.min.js", "./vendor/three.core.min.js"

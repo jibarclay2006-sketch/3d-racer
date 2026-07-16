@@ -33,6 +33,14 @@ export function trackRightVector(tangentX, tangentZ, out = {}) {
   return out;
 }
 
+export function steeringYawDelta(steer, speed, dt, drifting = false, surfaceGrip = 1) {
+  const movingSteer = clamp(Math.abs(speed) / 6, 0, 1);
+  const steering = clamp(steer, -1, 1);
+  if (movingSteer === 0 || steering === 0 || dt <= 0) return 0;
+  const yawRate = (.42 + Math.abs(speed) * .016) * (drifting ? 1.28 : 1) * surfaceGrip;
+  return -steering * yawRate * movingSteer * dt;
+}
+
 export function formatTime(milliseconds, showHours = false) {
   if (!Number.isFinite(milliseconds) || milliseconds < 0) return "--:--.---";
   const total = Math.floor(milliseconds);

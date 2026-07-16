@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { clamp, difficultyScale, formatTime, ordinal, rankRacers, seededRandom, shortestProgressDelta, trackRightVector, wrap01 } from "../src/core.js";
+import { clamp, difficultyScale, formatTime, ordinal, rankRacers, seededRandom, shortestProgressDelta, steeringYawDelta, trackRightVector, wrap01 } from "../src/core.js";
 
 test("numeric helpers clamp and wrap reliably", () => {
   assert.equal(clamp(12, 0, 10), 10);
@@ -43,4 +43,12 @@ test("track right vector matches the chase-camera screen direction", () => {
   const right = trackRightVector(tangent.x, tangent.z);
   assert.ok(Math.abs(tangent.x * right.x + tangent.z * right.z) < 1e-12);
   assert.ok(Math.abs(Math.hypot(right.x, right.z) - 1) < 1e-12);
+});
+
+test("steering changes the actual vehicle heading", () => {
+  assert.ok(steeringYawDelta(1, 30, .1) < 0, "right input must yaw right");
+  assert.ok(steeringYawDelta(-1, 30, .1) > 0, "left input must yaw left");
+  assert.equal(steeringYawDelta(1, 0, .1), 0, "a stopped car cannot rotate in place");
+  assert.equal(steeringYawDelta(0, 30, .1), 0, "neutral steering must preserve heading");
+  assert.ok(Math.abs(steeringYawDelta(1, 30, .1, true)) > Math.abs(steeringYawDelta(1, 30, .1, false)));
 });
