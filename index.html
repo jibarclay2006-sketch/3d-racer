@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+    <meta name="theme-color" content="#080b16" />
+    <meta name="description" content="Apex Rush 3D is a fast, fully playable WebGL arcade racing game." />
+    <link rel="manifest" href="manifest.webmanifest" />
+    <link rel="icon" href="assets/icon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+    <title>Apex Rush 3D</title>
+  </head>
+  <body>
+    <main id="game-shell">
+      <div id="viewport" aria-label="3D racing game viewport"></div>
+      <div class="grain" aria-hidden="true"></div>
+      <div class="vignette" aria-hidden="true"></div>
+      <div id="speed-lines" aria-hidden="true"></div>
+
+      <div id="loading-screen" class="screen active">
+        <div class="loader-mark">AR<span>3D</span></div>
+        <div class="loader-track"><i id="load-progress"></i></div>
+        <p>BUILDING THE GRID</p>
+      </div>
+
+      <section id="menu-screen" class="screen" aria-labelledby="game-title">
+        <header class="topbar">
+          <div class="brand"><b>AR</b><span>APEX RUSH<br />RACING DIVISION</span></div>
+          <div class="top-actions">
+            <button id="sound-button" class="icon-button" type="button" aria-label="Toggle sound">SOUND <b>ON</b></button>
+            <button id="fullscreen-button" class="icon-button" type="button" aria-label="Toggle fullscreen">FULLSCREEN</button>
+          </div>
+        </header>
+
+        <div class="menu-layout">
+          <div class="hero-copy">
+            <p class="eyebrow"><span></span> PROCEDURAL 3D ARCADE RACING</p>
+            <h1 id="game-title">APEX<br /><em>RUSH</em><sup>3D</sup></h1>
+            <p class="tagline">Eight drivers. Three impossible circuits.<br />One line through the chaos.</p>
+            <div class="feature-ticker">
+              <span>7 AI RIVALS</span><i></i><span>3 CIRCUITS</span><i></i><span>PURE SPEED</span>
+            </div>
+          </div>
+
+          <div class="race-card glass-panel">
+            <div class="card-heading">
+              <div><small>RACE SETUP</small><h2>CHOOSE YOUR RUN</h2></div>
+              <div id="track-count">01 / 03</div>
+            </div>
+
+            <div class="track-selector">
+              <button id="track-prev" class="arrow-button" type="button" aria-label="Previous track">‹</button>
+              <div class="track-info">
+                <div class="track-art" id="track-art"><canvas id="track-preview" width="210" height="106"></canvas><span id="weather-badge">GOLDEN HOUR</span></div>
+                <div><p id="track-location">PACIFIC COAST</p><h3 id="track-name">SOLAR CREST</h3><div class="track-stats"><span><small>LAPS</small><b id="track-laps">3</b></span><span><small>LENGTH</small><b id="track-length">4.2 KM</b></span><span><small>TECH</small><b id="track-tech">●●●○○</b></span></div></div>
+              </div>
+              <button id="track-next" class="arrow-button" type="button" aria-label="Next track">›</button>
+            </div>
+
+            <div class="setup-row">
+              <div class="field-group"><label>DIFFICULTY</label><div class="segmented" id="difficulty-options"><button data-difficulty="rookie" type="button">ROOKIE</button><button class="selected" data-difficulty="pro" type="button">PRO</button><button data-difficulty="legend" type="button">LEGEND</button></div></div>
+              <div class="field-group color-group"><label>CAR COLOR</label><div id="color-options" class="color-options"><button class="selected" data-color="#ff3b30" style="--swatch:#ff3b30" aria-label="Red" type="button"></button><button data-color="#00d7ff" style="--swatch:#00d7ff" aria-label="Cyan" type="button"></button><button data-color="#ffd60a" style="--swatch:#ffd60a" aria-label="Yellow" type="button"></button><button data-color="#b56cff" style="--swatch:#b56cff" aria-label="Purple" type="button"></button><button data-color="#f6f7fb" style="--swatch:#f6f7fb" aria-label="White" type="button"></button></div></div>
+            </div>
+
+            <button id="race-button" class="race-button" type="button"><span>START RACE</span><small>ENTER</small><b>→</b></button>
+            <p class="best-time">TRACK RECORD <b id="menu-record">--:--.---</b></p>
+          </div>
+        </div>
+
+        <footer class="menu-footer">
+          <span><kbd>WASD</kbd> DRIVE</span><span><kbd>SPACE</kbd> DRIFT</span><span><kbd>SHIFT</kbd> NITRO</span><span><kbd>ESC</kbd> PAUSE</span><span class="gamepad-status" id="gamepad-status">GAMEPAD READY</span>
+        </footer>
+      </section>
+
+      <section id="hud" class="screen" aria-label="Race information">
+        <div class="hud-top">
+          <div class="position-block"><strong id="position-value">4</strong><span>/8<small>POSITION</small></span></div>
+          <div class="race-clock"><span id="lap-value">LAP 1 / 3</span><strong id="timer-value">00:00.000</strong><small id="best-lap-value">BEST --:--.---</small></div>
+          <div class="hud-actions"><button id="hud-sound" type="button" aria-label="Toggle sound">♪</button><button id="pause-button" type="button" aria-label="Pause game">Ⅱ</button></div>
+        </div>
+
+        <div id="race-feed" aria-live="polite"></div>
+        <div id="countdown" aria-live="assertive"></div>
+
+        <div class="hud-left">
+          <div class="minimap-wrap"><canvas id="minimap" width="220" height="170"></canvas><span>N</span></div>
+          <div class="rank-list" id="rank-list"></div>
+        </div>
+
+        <div class="hud-bottom">
+          <div class="nitro-panel">
+            <div class="meter-label"><span>NITRO</span><b id="nitro-percent">100%</b></div>
+            <div class="nitro-meter"><i id="nitro-fill"></i><span></span><span></span><span></span></div>
+            <small>HOLD <kbd>SHIFT</kbd> TO BOOST</small>
+          </div>
+          <div id="drift-combo"><small>DRIFT</small><strong>+0</strong><span>x1.0</span></div>
+          <div class="speedometer">
+            <div class="speed-arc"><i id="speed-needle"></i><div><strong id="speed-value">0</strong><span>KM/H</span></div></div>
+            <div class="gear"><small>GEAR</small><b id="gear-value">N</b></div>
+          </div>
+        </div>
+      </section>
+
+      <div id="touch-controls" aria-label="Touch driving controls">
+        <div class="touch-left"><button data-control="left" type="button" aria-label="Steer left">‹</button><button data-control="right" type="button" aria-label="Steer right">›</button></div>
+        <div class="touch-right"><button class="touch-nitro" data-control="nitro" type="button">N₂O</button><button class="touch-drift" data-control="drift" type="button">DRIFT</button><button class="touch-brake" data-control="brake" type="button">BRAKE</button><button class="touch-gas" data-control="throttle" type="button">GAS</button></div>
+      </div>
+
+      <section id="pause-screen" class="screen modal-screen" aria-labelledby="pause-title">
+        <div class="modal glass-panel"><p class="eyebrow"><span></span> RACE CONTROL</p><h2 id="pause-title">PAUSED</h2><p>The circuit will wait. Your rivals will not.</p><button id="resume-button" class="race-button" type="button"><span>RESUME RACE</span><b>→</b></button><button id="restart-button" class="secondary-button" type="button">RESTART</button><button id="quit-button" class="text-button" type="button">QUIT TO GARAGE</button></div>
+      </section>
+
+      <section id="results-screen" class="screen modal-screen" aria-labelledby="results-title">
+        <div class="results-card glass-panel"><p class="eyebrow"><span></span> OFFICIAL RESULT</p><div class="result-place"><strong id="result-position">1</strong><sup id="result-suffix">ST</sup></div><h2 id="results-title">PODIUM FINISH</h2><p id="result-subtitle">A flawless run through Solar Crest.</p><div class="result-stats"><span><small>TOTAL TIME</small><b id="result-time">00:00.000</b></span><span><small>BEST LAP</small><b id="result-best">00:00.000</b></span><span><small>DRIFT SCORE</small><b id="result-drift">0</b></span></div><div id="new-record" class="new-record">NEW TRACK RECORD</div><div class="result-actions"><button id="race-again-button" class="race-button" type="button"><span>RACE AGAIN</span><b>↻</b></button><button id="results-menu-button" class="secondary-button" type="button">GARAGE</button></div></div>
+      </section>
+
+      <div id="webgl-error" class="screen modal-screen"><div class="modal glass-panel"><h2>WEBGL REQUIRED</h2><p>Apex Rush needs WebGL enabled in a modern browser to render the circuit.</p></div></div>
+    </main>
+    <script type="module" src="src/game.js"></script>
+  </body>
+</html>
