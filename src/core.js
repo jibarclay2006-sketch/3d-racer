@@ -23,6 +23,16 @@ export function shortestProgressDelta(a, b) {
   return delta;
 }
 
+// In Three.js the chase camera looks along the track tangent. Screen-right is
+// forward × up, which is (-z, 0, x) on the ground plane.
+export function trackRightVector(tangentX, tangentZ, out = {}) {
+  const length = Math.hypot(tangentX, tangentZ) || 1;
+  out.x = -tangentZ / length || 0;
+  out.y = 0;
+  out.z = tangentX / length || 0;
+  return out;
+}
+
 export function formatTime(milliseconds, showHours = false) {
   if (!Number.isFinite(milliseconds) || milliseconds < 0) return "--:--.---";
   const total = Math.floor(milliseconds);
