@@ -1,0 +1,14 @@
+{
+  "name": "Apex Rush 3D",
+  "short_name": "Apex Rush",
+  "description": "A complete procedural 3D arcade racing game.",
+  "start_url": "./",
+  "scope": "./",
+  "display": "fullscreen",
+  "orientation": "landscape",
+  "background_color": "#080b16",
+  "theme_color": "#ff3b30",
+  "icons": [
+    { "src": "assets/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }
+  ]
+}
