@@ -9,6 +9,7 @@ import {
   rankRacers,
   seededRandom,
   shortestProgressDelta,
+  trackRightVector,
   wrap01
 } from "./core.js";
 
@@ -82,7 +83,7 @@ function setScreen(active, ...screens) {
 function roadFrame(curve, t, point = new THREE.Vector3(), tangent = new THREE.Vector3(), right = new THREE.Vector3()) {
   curve.getPointAt(wrap01(t), point);
   curve.getTangentAt(wrap01(t), tangent).normalize();
-  right.set(tangent.z, 0, -tangent.x).normalize();
+  trackRightVector(tangent.x, tangent.z, right);
   return { point, tangent, right };
 }
 
@@ -509,7 +510,7 @@ class ApexRush {
       const t = sampleIndex / 360;
       const point = this.curve.getPointAt(t);
       const tangent = this.curve.getTangentAt(t).normalize();
-      const right = new THREE.Vector3(tangent.z, 0, -tangent.x).normalize();
+      const right = trackRightVector(tangent.x, tangent.z, new THREE.Vector3());
       const before = this.curve.getTangentAt(wrap01(t - .006));
       const after = this.curve.getTangentAt(wrap01(t + .006));
       return { t, point, tangent, right, curvature: before.angleTo(after) };
@@ -588,7 +589,7 @@ class ApexRush {
       uvs.push(0, i / 8, 1, i / 8);
       if (i < segments) {
         const base = i * 2;
-        indices.push(base, base + 2, base + 1, base + 2, base + 3, base + 1);
+        indices.push(base, base + 1, base + 2, base + 2, base + 1, base + 3);
       }
     }
     const geometry = new THREE.BufferGeometry();
@@ -1360,7 +1361,7 @@ class ApexRush {
     racer.model.userData.wheels.forEach((wheel,wheelIndex)=>{
       wheel.children[0].rotation.x-=wheelSpin;
       wheel.children[1].rotation.x-=wheelSpin;
-      if (isPlayer&&wheelIndex>=2) wheel.rotation.y=damp(wheel.rotation.y,clamp(racer.lateralVelocity*.04,-.35,.35),8,Math.max(dt,.001));
+      if (isPlayer&&wheelIndex%2===1) wheel.rotation.y=damp(wheel.rotation.y,clamp(-racer.lateralVelocity*.04,-.35,.35),8,Math.max(dt,.001));
     });
     if (isPlayer) {
       racer.model.userData.underglow.material.opacity=racer.boostActive?.55:.2;
