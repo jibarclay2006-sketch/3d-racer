@@ -8,7 +8,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="description" content="A little liquid in your phone. Tilt, shake, and stir a pocket-sized FLIP water simulation.">
 <title>Pocket Fluid</title>
-<link rel="stylesheet" href="./style.css?v=4">
+<link rel="stylesheet" href="./style.css?v=5">
 </head>
 <body>
 <canvas id="fluid" aria-label="Interactive liquid. Drag to stir; use arrow keys to tilt." tabindex="0"></canvas>
@@ -25,6 +25,7 @@
 <div class="setting"><label for="fill">Water amount</label><output id="fill-value" for="fill">34%</output><input id="fill" type="range" min="15" max="60" step="1" value="34"></div>
 <div class="setting"><label for="response">Motion strength</label><output id="response-value" for="response">1.0×</output><input id="response" type="range" min="0.3" max="2.7" step="0.1" value="1"></div>
 <fieldset><legend>Look</legend><div class="segments"><button id="dots" aria-pressed="true">Pixels</button><button id="water" aria-pressed="false">Liquid</button></div></fieldset>
+<label id="rheo-option" class="toggle-row rheo-option" for="rheoscopic" hidden><span>Rheoscopic shimmer<small>See the currents and swirls.</small></span><input id="rheoscopic" type="checkbox"></label>
 <fieldset class="color-setting"><legend>Color</legend>
 <div class="swatches" role="group" aria-label="Fluid color presets">
 <button class="swatch" data-color="#37dd78" style="--swatch:#37dd78" aria-label="Green" aria-pressed="true" title="Green"></button>
@@ -42,6 +43,6 @@
 <p class="credit">Inspired by <a href="https://mitxela.com/projects/flipflip" target="_blank" rel="noopener">mitxela</a> · Fluid method by <a href="https://matthias-research.github.io/pages/tenMinutePhysics/" target="_blank" rel="noopener">Ten Minute Physics</a></p>
 </dialog>
 <noscript>This fluid simulation needs JavaScript enabled.</noscript>
-<script type="module" src="./app.js?v=4"></script>
+<script type="module" src="./app.js?v=5"></script>
 </body>
 </html>

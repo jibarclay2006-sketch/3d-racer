@@ -13,3 +13,9 @@ A phone-first, dependency-free 2D FLIP/PIC liquid toy. Open `index.html` through
 Run `node --test fluid/physics.test.js` for settling, volume, responsive tilt, strong shaking, obstacle containment, and sensor-coordinate checks. Real device motion permission and sensor feel should also be tested on hardware.
 
 Inspired by [mitxela's FLIP Fluid on Flip Dots](https://mitxela.com/projects/flipflip). Solver concepts and transfer/projection adaptation from [Matthias Müller's Ten Minute Physics](https://matthias-research.github.io/pages/tenMinutePhysics/18-flip.html), used under the MIT license in `LICENSE`.
+
+## Rheoscopic shimmer
+
+Select Liquid, then enable Rheoscopic shimmer. Reflective pigment follows the simulation's material particles, rotates with the local velocity gradient, and produces pearlescent bands and short fading pathlines. It supports every color, freezes when paused, and is masked to the current water surface. Pigment is recreated after refill or resize; it never changes the solver, forces, or particle velocities.
+
+The 2D platelet shading is a qualitative visualization, inspired by [Virtual Rheoscopic Fluids](https://sites.cc.gatech.edu/people/home/turk/my_papers/rheoscopic_fluids.pdf). It is not a quantitative turbulence diagnostic.

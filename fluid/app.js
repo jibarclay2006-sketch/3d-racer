@@ -1,10 +1,11 @@
 import {Liquid,clamp,screenVector,orientationGravity} from './physics.js?v=2';
+import {Rheoscopic} from './rheoscopic.js?v=1';
 const $=id=>document.getElementById(id),canvas=$('fluid'),ctx=canvas.getContext('2d',{alpha:false});
 const panel=$('panel');
 const STORAGE_KEY='pocket-fluid-v3';
 // New 1.0× matches the former 0.6×: the solver itself is unchanged.
 const MOTION_BASELINE=.6;
-let prefs={level:'bottle',fill:34,response:1,look:'dots',color:'#37dd78',backdrop:true};
+let prefs={level:'bottle',fill:34,response:1,look:'dots',color:'#37dd78',backdrop:true,rheoscopic:false};
 try {
   const current=localStorage.getItem(STORAGE_KEY);
   const saved=JSON.parse(current||localStorage.getItem('pocket-fluid-v2')||'null');
@@ -20,9 +21,11 @@ try {
     }
     if(/^#[0-9a-f]{6}$/i.test(saved.color))prefs.color=saved.color.toLowerCase();
     if(typeof saved.backdrop==='boolean')prefs.backdrop=saved.backdrop;
+    if(typeof saved.rheoscopic==='boolean')prefs.rheoscopic=saved.rheoscopic;
   }
 }catch{}
 const save=()=>{try{localStorage.setItem(STORAGE_KEY,JSON.stringify(prefs));}catch{}};
+let rheo=null;
 let sim,W,H,dpr,sx,sy,background,liquidCanvas,liquidCtx,liquidImage;
 let motion=false,permissionPending=false,orientationTime=-Infinity,motionTime=-Infinity,linearTime=-Infinity;
 let gravity={x:0,y:1},linear={x:0,y:0},pointer=null;
@@ -121,18 +124,32 @@ function drawDots(){
 }
 function drawWater(){
  ctx.fillStyle=theme.background;ctx.fillRect(0,0,W,H);
+ const sheen=prefs.rheoscopic?(rheo||=new Rheoscopic(sim)).sheen:null;
  const {nx,density:d}=sim,iw=liquidCanvas.width,ih=liquidCanvas.height,data=liquidImage.data;
  for(let y=0;y<ih;y++)for(let x=0;x<iw;x++){
    const gx=x/3+.5,gy=y/3+.5,ix=Math.floor(gx),iy=Math.floor(gy),tx=gx-ix,ty=gy-iy,k=ix+iy*nx;
    const value=(d[k]*(1-tx)+d[k+1]*tx)*(1-ty)+(d[k+nx]*(1-tx)+d[k+nx+1]*tx)*ty;
    const a=clamp((value-.48)*5,0,1),edge=1-clamp((value-.65)/1.7,0,1),i=(x+y*iw)*4;
-   data[i]=Math.round(theme.water[0]+edge*(theme.edge[0]-theme.water[0]));
-   data[i+1]=Math.round(theme.water[1]+edge*(theme.edge[1]-theme.water[1]));
-   data[i+2]=Math.round(theme.water[2]+edge*(theme.edge[2]-theme.water[2]));data[i+3]=Math.round(a*255);
+   if(sheen){
+     const shine=(sheen[k]*(1-tx)+sheen[k+1]*tx)*(1-ty)+(sheen[k+nx]*(1-tx)+sheen[k+nx+1]*tx)*ty;
+     const light=.42+.84*shine,pearl=Math.pow(shine,3)*.28;
+     for(let channel=0;channel<3;channel++){
+       const base=theme.water[channel]*light;
+       const lit=base+(255-base)*pearl;
+       data[i+channel]=Math.round(lit+edge*.38*(theme.edge[channel]-lit));
+     }
+   }else{
+     data[i]=Math.round(theme.water[0]+edge*(theme.edge[0]-theme.water[0]));
+     data[i+1]=Math.round(theme.water[1]+edge*(theme.edge[1]-theme.water[1]));
+     data[i+2]=Math.round(theme.water[2]+edge*(theme.edge[2]-theme.water[2]));
+   }
+   data[i+3]=Math.round(a*255);
  }
  liquidCtx.putImageData(liquidImage,0,0);ctx.imageSmoothingEnabled=true;ctx.drawImage(liquidCanvas,0,0,W,H);
+ if(sheen)rheo.draw(ctx,W,H,sx,sy,liquidCanvas,theme);
 }
 function render(){
+ if(rheo&&rheo.sim!==sim)rheo=null;
  prefs.look==='dots'?drawDots():drawWater();
  ctx.lineCap='round';
  for(const s of sim.shapes){
@@ -158,6 +175,10 @@ function frameLoop(t){
      const ax=clamp((g.x-a.x/9.81)*prefs.response*MOTION_BASELINE,-4,4),ay=clamp((g.y-a.y/9.81)*prefs.response*MOTION_BASELINE,-4,4);
      if(pointer&&t-pointer.time>50){const decay=Math.exp(-DT*32);pointer.vx*=decay;pointer.vy*=decay;}
      sim.step(DT,ax,ay,pointer);accumulator-=DT;
+     if(prefs.look==='water'&&prefs.rheoscopic){
+       if(!rheo||rheo.sim!==sim)rheo=new Rheoscopic(sim);
+       rheo.update(DT);
+     }
    }
    }else accumulator=0;
    render();
@@ -245,7 +266,9 @@ for(const button of document.querySelectorAll('[data-color]'))button.onclick=()=
 $('color').oninput=e=>{prefs.color=e.target.value;applyColor();save();};
 $('backdrop').checked=prefs.backdrop;
 $('backdrop').onchange=e=>{prefs.backdrop=e.target.checked;cacheBackground();save();};
-function setLook(look){prefs.look=look;$('backdrop').closest('.toggle-row').hidden=look!=='dots';for(const id of ['dots','water'])$(id).setAttribute('aria-pressed',String(id===look));save();}
+$('rheoscopic').checked=prefs.rheoscopic;
+$('rheoscopic').onchange=e=>{prefs.rheoscopic=e.target.checked;rheo=null;save();};
+function setLook(look){prefs.look=look;rheo=null;$('rheo-option').hidden=look!=='water';$('backdrop').closest('.toggle-row').hidden=look!=='dots';for(const id of ['dots','water'])$(id).setAttribute('aria-pressed',String(id===look));save();}
 for(const id of ['dots','water'])$(id).onclick=()=>setLook(id);setLook(prefs.look);
 $('reset').onclick=()=>{refill();panel.close();};
 $('splash').onclick=()=>{setPaused(false);for(let i=0;i<sim.count;i++){const x=(sim.x[i]/sim.nx-.5);sim.vx[i]+=75;sim.vy[i]-=95*(1-x*x);}panel.close();};
