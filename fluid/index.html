@@ -8,11 +8,11 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="description" content="A little liquid in your phone. Tilt, shake, and stir a pocket-sized FLIP water simulation.">
 <title>Pocket Fluid</title>
-<link rel="stylesheet" href="./style.css?v=2">
+<link rel="stylesheet" href="./style.css?v=4">
 </head>
 <body>
-<canvas id="fluid" aria-label="Interactive green liquid. Drag to stir; use arrow keys to tilt." tabindex="0"></canvas>
-<header id="hud"><div class="wordmark">POCKET <b>FLUID</b></div><span id="status">Drag to stir</span></header>
+<canvas id="fluid" aria-label="Interactive liquid. Drag to stir; use arrow keys to tilt." tabindex="0"></canvas>
+<header id="hud"><div class="wordmark">POCKET <b>FLUID</b></div><div class="status-group"><span id="status">Drag to stir</span><button id="resume" hidden>Resume</button></div></header>
 <div id="tip" role="status" aria-live="polite"></div>
 <nav id="toolbar" aria-label="Simulation controls">
 <button id="motion" class="primary">Enable motion</button>
@@ -23,13 +23,25 @@
 <dialog id="panel" aria-labelledby="settings-title">
 <div class="panel-head"><h1 id="settings-title">Make it yours.</h1><button id="close" class="icon" aria-label="Close settings">×</button></div>
 <div class="setting"><label for="fill">Water amount</label><output id="fill-value" for="fill">34%</output><input id="fill" type="range" min="15" max="60" step="1" value="34"></div>
-<div class="setting"><label for="response">Motion strength</label><output id="response-value" for="response">1.0×</output><input id="response" type="range" min="0.6" max="1.6" step="0.1" value="1"></div>
+<div class="setting"><label for="response">Motion strength</label><output id="response-value" for="response">1.0×</output><input id="response" type="range" min="0.3" max="2.7" step="0.1" value="1"></div>
 <fieldset><legend>Look</legend><div class="segments"><button id="dots" aria-pressed="true">Pixels</button><button id="water" aria-pressed="false">Liquid</button></div></fieldset>
-<div class="actions"><button id="reset">Refill</button><button id="splash">Splash</button><button id="fullscreen">Fullscreen</button><button id="hide">Hide controls</button></div>
-<p class="help">Tilt to pour. Shake to splash. Drag to stir.<br>On a keyboard, hold the arrow keys to tilt.</p>
+<fieldset class="color-setting"><legend>Color</legend>
+<div class="swatches" role="group" aria-label="Fluid color presets">
+<button class="swatch" data-color="#37dd78" style="--swatch:#37dd78" aria-label="Green" aria-pressed="true" title="Green"></button>
+<button class="swatch" data-color="#369fff" style="--swatch:#369fff" aria-label="Ocean blue" aria-pressed="false" title="Ocean blue"></button>
+<button class="swatch" data-color="#32d7df" style="--swatch:#32d7df" aria-label="Cyan" aria-pressed="false" title="Cyan"></button>
+<button class="swatch" data-color="#a879ff" style="--swatch:#a879ff" aria-label="Violet" aria-pressed="false" title="Violet"></button>
+<button class="swatch" data-color="#ff72ad" style="--swatch:#ff72ad" aria-label="Pink" aria-pressed="false" title="Pink"></button>
+<button class="swatch" data-color="#ffa84a" style="--swatch:#ffa84a" aria-label="Amber" aria-pressed="false" title="Amber"></button>
+</div>
+<label class="custom-color" for="color"><span>Custom color</span><input id="color" type="color" value="#37dd78" aria-label="Custom fluid color"></label>
+</fieldset>
+<label class="toggle-row" for="backdrop"><span>Dot backdrop</span><input id="backdrop" type="checkbox" checked></label>
+<div class="actions"><button id="reset">Refill</button><button id="splash">Splash</button><button id="pause" aria-pressed="false">Pause</button><button id="fullscreen">Fullscreen</button><button id="hide">Hide controls</button></div>
+<p class="help">Tilt to pour. Shake to splash. Drag to stir.<br>On a keyboard, arrow keys tilt; Space pauses.</p>
 <p class="credit">Inspired by <a href="https://mitxela.com/projects/flipflip" target="_blank" rel="noopener">mitxela</a> · Fluid method by <a href="https://matthias-research.github.io/pages/tenMinutePhysics/" target="_blank" rel="noopener">Ten Minute Physics</a></p>
 </dialog>
 <noscript>This fluid simulation needs JavaScript enabled.</noscript>
-<script type="module" src="./app.js?v=3"></script>
+<script type="module" src="./app.js?v=4"></script>
 </body>
 </html>
