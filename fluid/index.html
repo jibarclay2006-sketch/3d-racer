@@ -15,7 +15,7 @@ color-scheme: dark;
 --text:#f2f2ed;
 --muted:#aaa;
 --line:rgba(255,255,255,.14);
---active:#f0b94a;
+--active:#55f277;
 }
 *{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
 html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--bg);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
@@ -30,7 +30,7 @@ pointer-events:none;transition:opacity .35s ease;
 #status{font-size:10px;color:#999;text-align:right;text-shadow:0 1px 8px #000}
 #controls{
 position:absolute;left:50%;bottom:max(16px,env(safe-area-inset-bottom));transform:translateX(-50%);
-display:flex;gap:8px;padding:8px;border:1px solid var(--line);border-radius:15px;background:var(--panel);
+display:flex;gap:7px;flex-wrap:wrap;justify-content:center;width:min(96vw,470px);padding:8px;border:1px solid var(--line);border-radius:15px;background:var(--panel);
 backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transition:opacity .35s ease, transform .35s ease;
 }
 button{
@@ -39,10 +39,10 @@ border-radius:10px;padding:10px 12px;font:600 11px/1 ui-monospace,SFMono-Regular
 letter-spacing:.04em;white-space:nowrap;
 }
 button:active{transform:scale(.97);background:#242424}
-button.primary{background:#f0b94a;color:#111;border-color:#f0b94a}
+button.primary{background:#55f277;color:#071109;border-color:#55f277}
 #intro{
 position:absolute;inset:0;display:grid;place-items:center;padding:28px;background:
-radial-gradient(circle at 50% 40%,rgba(240,185,74,.07),transparent 40%),rgba(7,7,7,.73);
+radial-gradient(circle at 50% 40%,rgba(85,242,119,.08),transparent 40%),rgba(7,7,7,.73);
 z-index:4;transition:opacity .25s ease;
 }
 #intro.hidden{opacity:0;pointer-events:none}
@@ -69,10 +69,11 @@ pointer-events:none;opacity:0;transition:opacity .3s;text-align:center;line-heig
 <div id="brand">FLIP // POCKET</div>
 <div id="status">motion off</div>
 </div>
-<div id="hint">Tilt the phone.<br>Drag through the fluid to stir it.</div>
+<div id="hint">Tilt to pour through the course.<br>Drag through the fluid to stir it.</div>
 <div id="controls">
 <button id="motionBtn" class="primary">ENABLE MOTION</button>
 <button id="resetBtn">RESET</button>
+<button id="courseBtn">COURSE: SLIDES</button>
 <button id="fullBtn">FULLSCREEN</button>
 </div>
 <div id="intro">
@@ -81,7 +82,7 @@ pointer-events:none;opacity:0;transition:opacity .3s;text-align:center;line-heig
 <p>
 This is a lightweight FLIP/PIC-style 2D fluid simulation rendered like a coarse flip-dot display.
 On iPhone, tap <b>Enable motion</b> so Safari can use device orientation/motion.
-Hold the phone upright, then tilt it to pour the fluid around.
+Hold the phone upright, then tilt it to pour the fluid through ramps, tubes, and pegs.
 </p>
 <div class="row">
 <button id="introMotion" class="primary">ENABLE MOTION</button>
@@ -99,6 +100,7 @@ const intro = document.getElementById('intro');
 const hint = document.getElementById('hint');
 const motionBtn = document.getElementById('motionBtn');
 const resetBtn = document.getElementById('resetBtn');
+const courseBtn = document.getElementById('courseBtn');
 const fullBtn = document.getElementById('fullBtn');
 const introMotion = document.getElementById('introMotion');
 const introManual = document.getElementById('introManual');
@@ -115,6 +117,10 @@ let gx=0, gy=0.95;
 let targetGx=0, targetGy=0.95;
 let impulseX=0, impulseY=0;
 let pointer=null;
+let courseIndex=0;
+const courseNames=['SLIDES','FUNNEL','PINS'];
+let obstacleSegments=[];
+let obstacleCircles=[];
 let lastT=performance.now();
 let lastInteraction=performance.now();
 let lastSensorT=0;
@@ -153,15 +159,168 @@ cols = clamp(Math.round(W/10.2), 32, 56);
 rows = clamp(Math.round(H/10.2), 46, 94);
 cellW=W/cols; cellH=H/rows;
 allocGrid();
+buildCourse();
 restDensity=0;
 seedParticles();
 }
 addEventListener('resize',resize,{passive:true});
+function buildCourse(){
+  obstacleSegments=[];
+  obstacleCircles=[];
+
+  const sx=(u)=>u*(cols-1);
+  const sy=(v)=>v*(rows-1);
+
+  if(courseIndex===0){
+    // Zig-zag chutes: broad alternating ramps with gaps so the fluid
+    // repeatedly gathers, spills, and changes direction.
+    obstacleSegments.push(
+      {x1:sx(.05),y1:sy(.34),x2:sx(.70),y2:sy(.43),r:.78},
+      {x1:sx(.95),y1:sy(.50),x2:sx(.30),y2:sy(.59),r:.78},
+      {x1:sx(.06),y1:sy(.67),x2:sx(.67),y2:sy(.75),r:.78}
+    );
+    obstacleCircles.push(
+      {x:sx(.78),y:sy(.39),r:1.20},
+      {x:sx(.20),y:sy(.55),r:1.05},
+      {x:sx(.78),y:sy(.71),r:1.10}
+    );
+  }else if(courseIndex===1){
+    // Funnel -> narrow vertical tube -> splitter ramp.
+    obstacleSegments.push(
+      {x1:sx(.05),y1:sy(.34),x2:sx(.43),y2:sy(.49),r:.76},
+      {x1:sx(.95),y1:sy(.34),x2:sx(.57),y2:sy(.49),r:.76},
+      {x1:sx(.43),y1:sy(.49),x2:sx(.43),y2:sy(.70),r:.72},
+      {x1:sx(.57),y1:sy(.49),x2:sx(.57),y2:sy(.70),r:.72},
+      {x1:sx(.50),y1:sy(.73),x2:sx(.18),y2:sy(.82),r:.74},
+      {x1:sx(.50),y1:sy(.73),x2:sx(.82),y2:sy(.82),r:.74}
+    );
+    obstacleCircles.push(
+      {x:sx(.50),y:sy(.29),r:1.18},
+      {x:sx(.50),y:sy(.74),r:1.12}
+    );
+  }else{
+    // Staggered peg field with two exit ramps.
+    const pegRows=[
+      [.22,.50,.78],
+      [.35,.65],
+      [.20,.50,.80],
+      [.34,.66]
+    ];
+    const ys=[.38,.49,.60,.71];
+    for(let j=0;j<pegRows.length;j++){
+      for(const u of pegRows[j]) obstacleCircles.push({x:sx(u),y:sy(ys[j]),r:1.25});
+    }
+    obstacleSegments.push(
+      {x1:sx(.05),y1:sy(.80),x2:sx(.43),y2:sy(.87),r:.72},
+      {x1:sx(.95),y1:sy(.80),x2:sx(.57),y2:sy(.87),r:.72}
+    );
+  }
+}
+
+function collideSegment(p,s){
+  const vx=s.x2-s.x1, vy=s.y2-s.y1;
+  const wx=p.x-s.x1, wy=p.y-s.y1;
+  const vv=vx*vx+vy*vy || 1;
+  const t=clamp((wx*vx+wy*vy)/vv,0,1);
+  const qx=s.x1+t*vx, qy=s.y1+t*vy;
+  let dx=p.x-qx, dy=p.y-qy;
+  let d2=dx*dx+dy*dy;
+  const minR=s.r+.18;
+
+  if(d2<minR*minR){
+    let d=Math.sqrt(d2);
+    let nx,ny;
+    if(d<1e-5){
+      const inv=1/Math.sqrt(vv);
+      nx=-vy*inv; ny=vx*inv; d=0;
+    }else{
+      nx=dx/d; ny=dy/d;
+    }
+    const push=minR-d;
+    p.x+=nx*push; p.y+=ny*push;
+
+    // Remove velocity into the wall but preserve tangential motion.
+    const vn=p.vx*nx+p.vy*ny;
+    if(vn<0){
+      p.vx-=vn*nx*1.03;
+      p.vy-=vn*ny*1.03;
+    }
+  }
+}
+
+function collideCircle(p,o){
+  let dx=p.x-o.x, dy=p.y-o.y;
+  let d2=dx*dx+dy*dy;
+  const minR=o.r+.18;
+  if(d2<minR*minR){
+    let d=Math.sqrt(d2);
+    let nx=1,ny=0;
+    if(d>1e-5){ nx=dx/d; ny=dy/d; }
+    const push=minR-d;
+    p.x+=nx*push; p.y+=ny*push;
+    const vn=p.vx*nx+p.vy*ny;
+    if(vn<0){
+      p.vx-=vn*nx*1.04;
+      p.vy-=vn*ny*1.04;
+    }
+  }
+}
+
+function collideObstacles(){
+  for(const p of particles){
+    for(const s of obstacleSegments) collideSegment(p,s);
+    for(const o of obstacleCircles) collideCircle(p,o);
+  }
+}
+
+function drawObstacles(){
+  const pitch=Math.min(cellW,cellH);
+  const toPX=(x)=> (x+.5)*cellW;
+  const toPY=(y)=> (y+.5)*cellH;
+
+  ctx.save();
+  ctx.lineCap='round';
+  ctx.lineJoin='round';
+
+  for(const s of obstacleSegments){
+    const x1=toPX(s.x1), y1=toPY(s.y1), x2=toPX(s.x2), y2=toPY(s.y2);
+    const w=Math.max(7,s.r*pitch*2);
+
+    ctx.strokeStyle='rgba(0,0,0,.88)';
+    ctx.lineWidth=w+5;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+
+    ctx.strokeStyle='#2a312c';
+    ctx.lineWidth=w;
+    ctx.beginPath(); ctx.moveTo(x1,y1); ctx.lineTo(x2,y2); ctx.stroke();
+
+    ctx.strokeStyle='rgba(100,255,137,.20)';
+    ctx.lineWidth=Math.max(1.2,w*.16);
+    ctx.beginPath(); ctx.moveTo(x1,y1-w*.13); ctx.lineTo(x2,y2-w*.13); ctx.stroke();
+  }
+
+  for(const o of obstacleCircles){
+    const x=toPX(o.x), y=toPY(o.y), r=o.r*pitch;
+    ctx.fillStyle='rgba(0,0,0,.9)';
+    ctx.beginPath(); ctx.arc(x,y,r+3,0,Math.PI*2); ctx.fill();
+
+    ctx.fillStyle='#2a312c';
+    ctx.beginPath(); ctx.arc(x,y,r,0,Math.PI*2); ctx.fill();
+
+    ctx.strokeStyle='rgba(100,255,137,.22)';
+    ctx.lineWidth=Math.max(1.2,pitch*.12);
+    ctx.beginPath(); ctx.arc(x-r*.15,y-r*.18,r*.68,3.35,5.7); ctx.stroke();
+  }
+
+  ctx.restore();
+}
+
 function seedParticles(){
 particles.length=0;
-const y0=Math.floor(rows*0.56);
+const y0=Math.floor(rows*0.08);
+const yEnd=Math.floor(rows*0.30);
 const spacing=0.50;
-for(let y=y0+0.25;y<rows-1.2;y+=spacing){
+for(let y=y0+0.25;y<yEnd;y+=spacing){
 for(let x=1.2;x<cols-1.2;x+=spacing){
 if(particles.length>=MAX_PARTICLES) break;
 const jx=(Math.random()-.5)*0.12, jy=(Math.random()-.5)*0.12;
@@ -382,11 +541,14 @@ function step(dt){
     integrateParticles(h);
     separateParticles();
     separateParticles();
+    collideObstacles();
     handleWalls();
 
     particlesToGrid();
     project(h);
     gridToParticles();
+    collideObstacles();
+    handleWalls();
   }
 }
 function render(){
@@ -451,14 +613,14 @@ function render(){
     ctx.translate(cx,cy);
     ctx.scale(squash,1);
 
-    ctx.fillStyle=side ? '#e8b632' : '#171717';
+    ctx.fillStyle=side ? '#55ed78' : '#151a16';
     ctx.beginPath();
     ctx.arc(0,0,faceR,0,Math.PI*2);
     ctx.fill();
 
     if(side){
       // Warm enamel highlight, kept subtle so dots stay binary.
-      ctx.fillStyle='rgba(255,239,171,.22)';
+      ctx.fillStyle='rgba(215,255,222,.24)';
       ctx.beginPath();
       ctx.arc(-faceR*.23,-faceR*.27,faceR*.25,0,Math.PI*2);
       ctx.fill();
@@ -471,7 +633,7 @@ function render(){
 
     // Brief bright edge while the disc is physically "edge on".
     if(phase<1 && squash<.23){
-      ctx.strokeStyle='rgba(241,190,67,.55)';
+      ctx.strokeStyle='rgba(104,255,137,.62)';
       ctx.lineWidth=Math.max(1,pitch*.08);
       ctx.beginPath();
       ctx.moveTo(0,-faceR*.82);
@@ -481,6 +643,8 @@ function render(){
 
     ctx.restore();
   }
+
+  drawObstacles();
 
   // Slight bezel line around the virtual panel.
   ctx.strokeStyle='rgba(255,255,255,.08)';
@@ -605,6 +769,14 @@ motionBtn.addEventListener('click',enableMotion);
 introMotion.addEventListener('click',enableMotion);
 introManual.addEventListener('click',()=>{intro.classList.add('hidden'); hint.classList.add('show'); setTimeout(()=>hint.classList.remove('show'),2200); wakeUI();});
 resetBtn.addEventListener('click',()=>{restDensity=0; seedParticles(); wakeUI();});
+courseBtn.addEventListener('click',()=>{
+  courseIndex=(courseIndex+1)%courseNames.length;
+  courseBtn.textContent='COURSE: '+courseNames[courseIndex];
+  buildCourse();
+  restDensity=0;
+  seedParticles();
+  wakeUI();
+});
 fullBtn.addEventListener('click',async()=>{
 wakeUI();
 try{
