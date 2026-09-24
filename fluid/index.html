@@ -118,7 +118,7 @@ let lastInteraction=performance.now();
 let lastSensorT=0;
 let frameCounter=0, fps=60, fpsMark=performance.now();
 let accumulator=0;
-const FIXED_DT=1/120;
+const FIXED_DT=1/60;
 let restDensity=0;
 const FLIP_BLEND = 0.90;
 const PRESSURE_ITERS = 45;
@@ -206,7 +206,7 @@ U0.set(U); V0.set(V);
 function project(dt){
   // Gravity is a bulk acceleration. Pressure then makes the occupied cells
   // move together as a liquid instead of as independent particles.
-  const accel=26.0;
+  const accel=180.0;
   const ax=(gx+impulseX)*accel, ay=(gy+impulseY)*accel;
 
   for(let y=1;y<rows-1;y++) for(let x=1;x<cols-1;x++){
@@ -309,7 +309,7 @@ p.vx += pointer.vx*f;
 p.vy += pointer.vy*f;
 }
 }
-const speed=Math.hypot(p.vx,p.vy), maxSpeed=28;
+const speed=Math.hypot(p.vx,p.vy), maxSpeed=46;
 if(speed>maxSpeed){ const s=maxSpeed/speed; p.vx*=s; p.vy*=s; }
 p.x += p.vx*dt;
 p.y += p.vy*dt;
