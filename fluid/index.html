@@ -1,0 +1,445 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no" />
+<meta name="theme-color" content="#070707" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<title>FLIP Pocket Fluid</title>
+<style>
+:root{
+color-scheme: dark;
+--bg:#070707;
+--panel:rgba(18,18,18,.82);
+--text:#f2f2ed;
+--muted:#aaa;
+--line:rgba(255,255,255,.14);
+--active:#f0b94a;
+}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{width:100%;height:100%;margin:0;overflow:hidden;background:var(--bg);font-family:ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace}
+body{position:fixed;inset:0;touch-action:none}
+canvas{position:absolute;inset:0;width:100%;height:100%;display:block;background:var(--bg)}
+#hud{
+position:absolute;left:max(12px,env(safe-area-inset-left));right:max(12px,env(safe-area-inset-right));
+top:max(12px,env(safe-area-inset-top));display:flex;gap:8px;align-items:center;justify-content:space-between;
+pointer-events:none;transition:opacity .35s ease;
+}
+#brand{font-size:11px;letter-spacing:.14em;color:#ddd;text-shadow:0 1px 8px #000}
+#status{font-size:10px;color:#999;text-align:right;text-shadow:0 1px 8px #000}
+#controls{
+position:absolute;left:50%;bottom:max(16px,env(safe-area-inset-bottom));transform:translateX(-50%);
+display:flex;gap:8px;padding:8px;border:1px solid var(--line);border-radius:15px;background:var(--panel);
+backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);transition:opacity .35s ease, transform .35s ease;
+}
+button{
+appearance:none;border:1px solid var(--line);background:#171717;color:var(--text);
+border-radius:10px;padding:10px 12px;font:600 11px/1 ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+letter-spacing:.04em;white-space:nowrap;
+}
+button:active{transform:scale(.97);background:#242424}
+button.primary{background:#f0b94a;color:#111;border-color:#f0b94a}
+#intro{
+position:absolute;inset:0;display:grid;place-items:center;padding:28px;background:
+radial-gradient(circle at 50% 40%,rgba(240,185,74,.07),transparent 40%),rgba(7,7,7,.73);
+z-index:4;transition:opacity .25s ease;
+}
+#intro.hidden{opacity:0;pointer-events:none}
+.card{
+width:min(420px,92vw);padding:22px;border:1px solid var(--line);border-radius:20px;background:rgba(12,12,12,.92);
+box-shadow:0 24px 70px rgba(0,0,0,.5);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px)
+}
+.card h1{font-size:19px;margin:0 0 10px;letter-spacing:-.03em}
+.card p{font:12px/1.55 system-ui,-apple-system,sans-serif;color:#bbb;margin:0 0 16px}
+.card .row{display:flex;gap:8px}.card .row button{flex:1;padding:12px}
+#hint{
+position:absolute;left:50%;top:52%;transform:translate(-50%,-50%);font-size:11px;color:#777;
+pointer-events:none;opacity:0;transition:opacity .3s;text-align:center;line-height:1.5
+}
+#hint.show{opacity:1}
+.hiddenUI #controls{opacity:0;transform:translate(-50%,12px);pointer-events:none}
+.hiddenUI #hud{opacity:.18}
+@media (prefers-reduced-motion: reduce){*{transition:none!important}}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="hud">
+<div id="brand">FLIP // POCKET</div>
+<div id="status">motion off</div>
+</div>
+<div id="hint">Tilt the phone.<br>Drag through the fluid to stir it.</div>
+<div id="controls">
+<button id="motionBtn" class="primary">ENABLE MOTION</button>
+<button id="resetBtn">RESET</button>
+<button id="fullBtn">FULLSCREEN</button>
+</div>
+<div id="intro">
+<div class="card">
+<h1>Pixel fluid, driven by your phone.</h1>
+<p>
+This is a lightweight FLIP/PIC-style 2D fluid simulation rendered like a coarse flip-dot display.
+On iPhone, tap <b>Enable motion</b> so Safari can use device orientation/motion.
+Hold the phone upright, then tilt it to pour the fluid around.
+</p>
+<div class="row">
+<button id="introMotion" class="primary">ENABLE MOTION</button>
+<button id="introManual">TRY WITHOUT</button>
+</div>
+</div>
+</div>
+<script>
+(() => {
+'use strict';
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d', {alpha:false, desynchronized:true});
+const statusEl = document.getElementById('status');
+const intro = document.getElementById('intro');
+const hint = document.getElementById('hint');
+const motionBtn = document.getElementById('motionBtn');
+const resetBtn = document.getElementById('resetBtn');
+const fullBtn = document.getElementById('fullBtn');
+const introMotion = document.getElementById('introMotion');
+const introManual = document.getElementById('introManual');
+let W=0,H=0,DPR=1;
+let cols=46, rows=70;
+let cellW=1, cellH=1;
+let particles=[];
+let U,V,U0,V0,WU,WV,fluid,pressure,divergence,density;
+let motionEnabled=false;
+let sensorSeen=false;
+let gx=0, gy=0.95;
+let targetGx=0, targetGy=0.95;
+let impulseX=0, impulseY=0;
+let pointer=null;
+let lastT=performance.now();
+let lastInteraction=performance.now();
+let lastSensorT=0;
+let frameCounter=0, fps=60, fpsMark=performance.now();
+const FLIP_BLEND = 0.88;
+const PRESSURE_ITERS = 18;
+const SUBSTEPS = 2;
+const MAX_PARTICLES = 1550;
+function idx(x,y){ return x + y*cols; }
+function clamp(v,a,b){ return v<a?a:v>b?b:v; }
+function lerp(a,b,t){ return a+(b-a)*t; }
+function allocGrid(){
+const n=cols*rows;
+U=new Float32Array(n); V=new Float32Array(n);
+U0=new Float32Array(n); V0=new Float32Array(n);
+WU=new Float32Array(n); WV=new Float32Array(n);
+fluid=new Uint8Array(n);
+pressure=new Float32Array(n);
+divergence=new Float32Array(n);
+density=new Float32Array(n);
+}
+function resize(){
+DPR=Math.min(window.devicePixelRatio||1,2);
+W=Math.max(1,innerWidth); H=Math.max(1,innerHeight);
+canvas.width=Math.round(W*DPR); canvas.height=Math.round(H*DPR);
+canvas.style.width=W+'px'; canvas.style.height=H+'px';
+ctx.setTransform(DPR,0,0,DPR,0,0);
+cols = clamp(Math.round(W/8.6), 38, 64);
+rows = clamp(Math.round(H/8.6), 52, 108);
+cellW=W/cols; cellH=H/rows;
+allocGrid();
+seedParticles();
+}
+addEventListener('resize',resize,{passive:true});
+function seedParticles(){
+particles.length=0;
+const y0=Math.floor(rows*0.56);
+const spacing=0.44;
+for(let y=y0+0.25;y<rows-1.2;y+=spacing){
+for(let x=1.2;x<cols-1.2;x+=spacing){
+if(particles.length>=MAX_PARTICLES) break;
+const jx=(Math.random()-.5)*0.12, jy=(Math.random()-.5)*0.12;
+particles.push({x:x+jx,y:y+jy,vx:0,vy:0});
+}
+if(particles.length>=MAX_PARTICLES) break;
+}
+}
+function bilinear(arr,x,y){
+x=clamp(x,0.001,cols-1.001); y=clamp(y,0.001,rows-1.001);
+const x0=Math.floor(x), y0=Math.floor(y);
+const x1=Math.min(x0+1,cols-1), y1=Math.min(y0+1,rows-1);
+const tx=x-x0, ty=y-y0;
+const a=arr[idx(x0,y0)], b=arr[idx(x1,y0)], c=arr[idx(x0,y1)], d=arr[idx(x1,y1)];
+return lerp(lerp(a,b,tx), lerp(c,d,tx), ty);
+}
+function splat(arr,weights,x,y,val){
+x=clamp(x,0.001,cols-1.001); y=clamp(y,0.001,rows-1.001);
+const x0=Math.floor(x), y0=Math.floor(y);
+const x1=Math.min(x0+1,cols-1), y1=Math.min(y0+1,rows-1);
+const tx=x-x0, ty=y-y0;
+const w00=(1-tx)*(1-ty), w10=tx*(1-ty), w01=(1-tx)*ty, w11=tx*ty;
+let i=idx(x0,y0); arr[i]+=val*w00; weights[i]+=w00;
+i=idx(x1,y0); arr[i]+=val*w10; weights[i]+=w10;
+i=idx(x0,y1); arr[i]+=val*w01; weights[i]+=w01;
+i=idx(x1,y1); arr[i]+=val*w11; weights[i]+=w11;
+}
+function particlesToGrid(){
+U.fill(0); V.fill(0); WU.fill(0); WV.fill(0); fluid.fill(0); density.fill(0);
+for(const p of particles){
+splat(U,WU,p.x,p.y,p.vx);
+splat(V,WV,p.x,p.y,p.vy);
+const x0=clamp(Math.floor(p.x),0,cols-1), y0=clamp(Math.floor(p.y),0,rows-1);
+for(let yy=Math.max(0,y0-1);yy<=Math.min(rows-1,y0+1);yy++){
+for(let xx=Math.max(0,x0-1);xx<=Math.min(cols-1,x0+1);xx++){
+const dx=p.x-xx, dy=p.y-yy, w=Math.max(0,1-Math.hypot(dx,dy));
+density[idx(xx,yy)] += w;
+}
+}
+fluid[idx(x0,y0)]=1;
+}
+for(let i=0;i<U.length;i++){
+if(WU[i]>1e-6) U[i]/=WU[i];
+if(WV[i]>1e-6) V[i]/=WV[i];
+}
+U0.set(U); V0.set(V);
+}
+function project(dt){
+const accel=17.5;
+const ax=(gx+impulseX)*accel, ay=(gy+impulseY)*accel;
+for(let y=1;y<rows-1;y++) for(let x=1;x<cols-1;x++){
+const i=idx(x,y);
+if(fluid[i]){ U[i]+=ax*dt; V[i]+=ay*dt; }
+}
+divergence.fill(0);
+pressure.fill(0);
+for(let y=1;y<rows-1;y++) for(let x=1;x<cols-1;x++){
+const i=idx(x,y);
+if(!fluid[i]) continue;
+const ul=U[idx(x-1,y)], ur=U[idx(x+1,y)];
+const vd=V[idx(x,y-1)], vu=V[idx(x,y+1)];
+divergence[i]=0.5*((ur-ul)+(vu-vd));
+}
+let next=new Float32Array(pressure.length);
+for(let it=0;it<PRESSURE_ITERS;it++){
+next.fill(0);
+for(let y=1;y<rows-1;y++) for(let x=1;x<cols-1;x++){
+const i=idx(x,y);
+if(!fluid[i]) continue;
+let sum=0, n=0;
+const ns=[[x-1,y],[x+1,y],[x,y-1],[x,y+1]];
+for(const q of ns){
+const j=idx(q[0],q[1]);
+if(fluid[j]){ sum+=pressure[j]; n++; }
+}
+next[i]=n ? (sum-divergence[i]*1.35)/n : 0;
+}
+const t=pressure; pressure=next; next=t;
+}
+for(let y=1;y<rows-1;y++) for(let x=1;x<cols-1;x++){
+const i=idx(x,y);
+if(!fluid[i]) continue;
+U[i]-=0.52*(pressure[idx(x+1,y)]-pressure[idx(x-1,y)]);
+V[i]-=0.52*(pressure[idx(x,y+1)]-pressure[idx(x,y-1)]);
+}
+for(let x=0;x<cols;x++){ V[idx(x,0)]=Math.max(0,V[idx(x,0)]); V[idx(x,rows-1)]=Math.min(0,V[idx(x,rows-1)]); }
+for(let y=0;y<rows;y++){ U[idx(0,y)]=Math.max(0,U[idx(0,y)]); U[idx(cols-1,y)]=Math.min(0,U[idx(cols-1,y)]); }
+}
+function gridToParticles(dt){
+for(const p of particles){
+const picX=bilinear(U,p.x,p.y), picY=bilinear(V,p.x,p.y);
+const oldX=bilinear(U0,p.x,p.y), oldY=bilinear(V0,p.x,p.y);
+const flipX=p.vx+(picX-oldX), flipY=p.vy+(picY-oldY);
+p.vx=lerp(picX,flipX,FLIP_BLEND);
+p.vy=lerp(picY,flipY,FLIP_BLEND);
+if(pointer){
+const dx=p.x-pointer.x, dy=p.y-pointer.y;
+const r2=dx*dx+dy*dy, rad=7.5;
+if(r2<rad*rad){
+const f=(1-Math.sqrt(r2)/rad)*0.65;
+p.vx += pointer.vx*f;
+p.vy += pointer.vy*f;
+}
+}
+const speed=Math.hypot(p.vx,p.vy), maxSpeed=32;
+if(speed>maxSpeed){ const s=maxSpeed/speed; p.vx*=s; p.vy*=s; }
+p.x += p.vx*dt;
+p.y += p.vy*dt;
+const e=0.22, pad=.72;
+if(p.x<pad){p.x=pad;p.vx=Math.abs(p.vx)*e;}
+if(p.x>cols-1-pad){p.x=cols-1-pad;p.vx=-Math.abs(p.vx)*e;}
+if(p.y<pad){p.y=pad;p.vy=Math.abs(p.vy)*e;}
+if(p.y>rows-1-pad){p.y=rows-1-pad;p.vy=-Math.abs(p.vy)*e;}
+}
+}
+function separateParticles(){
+const buckets=new Map();
+const hs=.72;
+const key=(x,y)=>x+','+y;
+for(let i=0;i<particles.length;i++){
+const p=particles[i], bx=Math.floor(p.x/hs), by=Math.floor(p.y/hs), k=key(bx,by);
+let a=buckets.get(k); if(!a) buckets.set(k,a=[]); a.push(i);
+}
+const minD=.39, minD2=minD*minD;
+for(let i=0;i<particles.length;i++){
+const a=particles[i], bx=Math.floor(a.x/hs), by=Math.floor(a.y/hs);
+for(let oy=-1;oy<=1;oy++) for(let ox=-1;ox<=1;ox++){
+const list=buckets.get(key(bx+ox,by+oy)); if(!list) continue;
+for(const j of list){
+if(j<=i) continue;
+const b=particles[j]; let dx=b.x-a.x, dy=b.y-a.y, d2=dx*dx+dy*dy;
+if(d2>1e-8 && d2<minD2){
+const d=Math.sqrt(d2), push=(minD-d)*.21, nx=dx/d, ny=dy/d;
+a.x-=nx*push; a.y-=ny*push; b.x+=nx*push; b.y+=ny*push;
+}
+}
+}
+}
+}
+function step(dt){
+gx=lerp(gx,targetGx,0.12);
+gy=lerp(gy,targetGy,0.12);
+impulseX*=0.86; impulseY*=0.86;
+for(let s=0;s<SUBSTEPS;s++){
+const h=dt/SUBSTEPS;
+particlesToGrid();
+project(h);
+gridToParticles(h);
+separateParticles();
+}
+}
+function render(){
+ctx.fillStyle='#070707'; ctx.fillRect(0,0,W,H);
+const r=Math.max(1.15,Math.min(cellW,cellH)*0.33);
+for(let y=0;y<rows;y++) for(let x=0;x<cols;x++){
+const i=idx(x,y);
+const cx=(x+.5)*cellW, cy=(y+.5)*cellH;
+const d=density[i];
+if(d>.26){
+const a=clamp(.62+d*.16,.66,1);
+ctx.fillStyle='rgba(240,185,74,'+a+')';
+ctx.beginPath(); ctx.arc(cx,cy,r,0,Math.PI*2); ctx.fill();
+if(d>1.05 && r>2){
+ctx.fillStyle='rgba(255,231,170,.20)';
+ctx.beginPath(); ctx.arc(cx-r*.23,cy-r*.23,r*.32,0,Math.PI*2); ctx.fill();
+}
+}else{
+ctx.fillStyle='rgba(255,255,255,.055)';
+ctx.beginPath(); ctx.arc(cx,cy,r*.78,0,Math.PI*2); ctx.fill();
+}
+}
+ctx.strokeStyle='rgba(255,255,255,.08)';
+ctx.lineWidth=1;
+ctx.strokeRect(.5,.5,W-1,H-1);
+}
+function loop(t){
+let dt=Math.min(.026,(t-lastT)/1000 || .016); lastT=t;
+step(dt);
+render();
+frameCounter++;
+if(t-fpsMark>700){ fps=Math.round(frameCounter*1000/(t-fpsMark)); frameCounter=0; fpsMark=t; }
+const sens = motionEnabled ? (sensorSeen ? 'motion live' : 'motion waiting') : 'motion off';
+statusEl.textContent=sens+' · '+fps+' fps';
+if(t-lastInteraction>5000) document.body.classList.add('hiddenUI');
+requestAnimationFrame(loop);
+}
+function orientationAngle(){
+if(screen.orientation && Number.isFinite(screen.orientation.angle)) return screen.orientation.angle;
+return Number(window.orientation)||0;
+}
+function onOrientation(e){
+if(e.beta==null || e.gamma==null) return;
+sensorSeen=true; lastSensorT=performance.now();
+let x=Math.sin(e.gamma*Math.PI/180);
+let y=Math.sin(e.beta*Math.PI/180);
+const a=((orientationAngle()%360)+360)%360;
+let sx=x, sy=y;
+if(a===90){ sx=-y; sy=x; }
+else if(a===180){ sx=-x; sy=-y; }
+else if(a===270){ sx=y; sy=-x; }
+const mag=Math.hypot(sx,sy);
+if(mag<.035){ sx=0; sy=0; }
+if(mag>1){ sx/=mag; sy/=mag; }
+targetGx=sx;
+targetGy=sy;
+}
+function onMotion(e){
+const a=e.acceleration;
+if(!a || a.x==null || a.y==null) return;
+const ang=((orientationAngle()%360)+360)%360;
+let x=a.x||0, y=-(a.y||0);
+if(ang===90){ const q=x; x=-y; y=q; }
+else if(ang===180){ x=-x; y=-y; }
+else if(ang===270){ const q=x; x=y; y=-q; }
+impulseX=clamp(impulseX+x*.018,-.7,.7);
+impulseY=clamp(impulseY+y*.018,-.7,.7);
+}
+async function enableMotion(){
+try{
+let ok=true;
+if(typeof DeviceOrientationEvent!=='undefined' && typeof DeviceOrientationEvent.requestPermission==='function'){
+ok=(await DeviceOrientationEvent.requestPermission())==='granted';
+}
+if(ok && typeof DeviceMotionEvent!=='undefined' && typeof DeviceMotionEvent.requestPermission==='function'){
+ok=(await DeviceMotionEvent.requestPermission())==='granted';
+}
+if(!ok) throw new Error('permission denied');
+addEventListener('deviceorientation',onOrientation,true);
+addEventListener('devicemotion',onMotion,true);
+motionEnabled=true;
+motionBtn.textContent='MOTION ON';
+intro.classList.add('hidden');
+hint.classList.add('show');
+setTimeout(()=>hint.classList.remove('show'),2200);
+wakeUI();
+}catch(err){
+motionEnabled=false;
+statusEl.textContent='motion unavailable';
+intro.classList.add('hidden');
+alert('Motion permission was not granted. The fluid still works: drag through it to stir. For iPhone sensors, open this page in Safari over HTTPS and tap Enable Motion.');
+}
+}
+function wakeUI(){
+lastInteraction=performance.now();
+document.body.classList.remove('hiddenUI');
+}
+function pointerFromEvent(e){
+const touch=e.touches ? e.touches[0] : e;
+if(!touch) return null;
+return {x:touch.clientX/cellW-.5,y:touch.clientY/cellH-.5};
+}
+function startPointer(e){
+e.preventDefault(); wakeUI();
+const q=pointerFromEvent(e); if(!q) return;
+pointer={x:q.x,y:q.y,px:q.x,py:q.y,vx:0,vy:0,t:performance.now()};
+}
+function movePointer(e){
+if(!pointer) return; e.preventDefault(); wakeUI();
+const q=pointerFromEvent(e); if(!q) return;
+const now=performance.now(), dt=Math.max(.008,(now-pointer.t)/1000);
+pointer.vx=clamp((q.x-pointer.px)/dt*.055,-18,18);
+pointer.vy=clamp((q.y-pointer.py)/dt*.055,-18,18);
+pointer.x=q.x; pointer.y=q.y; pointer.px=q.x; pointer.py=q.y; pointer.t=now;
+}
+function endPointer(e){ if(e) e.preventDefault(); pointer=null; wakeUI(); }
+canvas.addEventListener('touchstart',startPointer,{passive:false});
+canvas.addEventListener('touchmove',movePointer,{passive:false});
+canvas.addEventListener('touchend',endPointer,{passive:false});
+canvas.addEventListener('touchcancel',endPointer,{passive:false});
+canvas.addEventListener('pointerdown',e=>{ if(e.pointerType!=='touch') startPointer(e); });
+canvas.addEventListener('pointermove',e=>{ if(e.pointerType!=='touch' && (e.buttons&1)) movePointer(e); });
+canvas.addEventListener('pointerup',e=>{ if(e.pointerType!=='touch') endPointer(e); });
+motionBtn.addEventListener('click',enableMotion);
+introMotion.addEventListener('click',enableMotion);
+introManual.addEventListener('click',()=>{intro.classList.add('hidden'); hint.classList.add('show'); setTimeout(()=>hint.classList.remove('show'),2200); wakeUI();});
+resetBtn.addEventListener('click',()=>{seedParticles(); wakeUI();});
+fullBtn.addEventListener('click',async()=>{
+wakeUI();
+try{
+if(!document.fullscreenElement) await document.documentElement.requestFullscreen();
+else await document.exitFullscreen();
+}catch(_){}
+});
+document.addEventListener('pointerdown',wakeUI,{passive:true});
+document.addEventListener('touchstart',wakeUI,{passive:true});
+resize();
+requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
