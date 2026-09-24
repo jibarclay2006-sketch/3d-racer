@@ -117,8 +117,8 @@ let lastT=performance.now();
 let lastInteraction=performance.now();
 let lastSensorT=0;
 let frameCounter=0, fps=60, fpsMark=performance.now();
-const FLIP_BLEND = 0.88;
-const PRESSURE_ITERS = 18;
+const FLIP_BLEND = 0.975;
+const PRESSURE_ITERS = 14;
 const SUBSTEPS = 2;
 const MAX_PARTICLES = 1550;
 function idx(x,y){ return x + y*cols; }
@@ -200,7 +200,7 @@ if(WV[i]>1e-6) V[i]/=WV[i];
 U0.set(U); V0.set(V);
 }
 function project(dt){
-const accel=17.5;
+const accel=30.0;
 const ax=(gx+impulseX)*accel, ay=(gy+impulseY)*accel;
 for(let y=1;y<rows-1;y++) for(let x=1;x<cols-1;x++){
 const i=idx(x,y);
@@ -251,16 +251,16 @@ if(pointer){
 const dx=p.x-pointer.x, dy=p.y-pointer.y;
 const r2=dx*dx+dy*dy, rad=7.5;
 if(r2<rad*rad){
-const f=(1-Math.sqrt(r2)/rad)*0.65;
+const f=(1-Math.sqrt(r2)/rad)*0.95;
 p.vx += pointer.vx*f;
 p.vy += pointer.vy*f;
 }
 }
-const speed=Math.hypot(p.vx,p.vy), maxSpeed=32;
+const speed=Math.hypot(p.vx,p.vy), maxSpeed=50;
 if(speed>maxSpeed){ const s=maxSpeed/speed; p.vx*=s; p.vy*=s; }
 p.x += p.vx*dt;
 p.y += p.vy*dt;
-const e=0.22, pad=.72;
+const e=0.42, pad=.72;
 if(p.x<pad){p.x=pad;p.vx=Math.abs(p.vx)*e;}
 if(p.x>cols-1-pad){p.x=cols-1-pad;p.vx=-Math.abs(p.vx)*e;}
 if(p.y<pad){p.y=pad;p.vy=Math.abs(p.vy)*e;}
@@ -284,7 +284,7 @@ for(const j of list){
 if(j<=i) continue;
 const b=particles[j]; let dx=b.x-a.x, dy=b.y-a.y, d2=dx*dx+dy*dy;
 if(d2>1e-8 && d2<minD2){
-const d=Math.sqrt(d2), push=(minD-d)*.21, nx=dx/d, ny=dy/d;
+const d=Math.sqrt(d2), push=(minD-d)*.16, nx=dx/d, ny=dy/d;
 a.x-=nx*push; a.y-=ny*push; b.x+=nx*push; b.y+=ny*push;
 }
 }
@@ -292,9 +292,9 @@ a.x-=nx*push; a.y-=ny*push; b.x+=nx*push; b.y+=ny*push;
 }
 }
 function step(dt){
-gx=lerp(gx,targetGx,0.12);
-gy=lerp(gy,targetGy,0.12);
-impulseX*=0.86; impulseY*=0.86;
+gx=lerp(gx,targetGx,0.32);
+gy=lerp(gy,targetGy,0.32);
+impulseX*=0.94; impulseY*=0.94;
 for(let s=0;s<SUBSTEPS;s++){
 const h=dt/SUBSTEPS;
 particlesToGrid();
@@ -366,8 +366,8 @@ let x=a.x||0, y=-(a.y||0);
 if(ang===90){ const q=x; x=-y; y=q; }
 else if(ang===180){ x=-x; y=-y; }
 else if(ang===270){ const q=x; x=y; y=-q; }
-impulseX=clamp(impulseX+x*.018,-.7,.7);
-impulseY=clamp(impulseY+y*.018,-.7,.7);
+impulseX=clamp(impulseX+x*.050,-1.8,1.8);
+impulseY=clamp(impulseY+y*.050,-1.8,1.8);
 }
 async function enableMotion(){
 try{
@@ -412,8 +412,8 @@ function movePointer(e){
 if(!pointer) return; e.preventDefault(); wakeUI();
 const q=pointerFromEvent(e); if(!q) return;
 const now=performance.now(), dt=Math.max(.008,(now-pointer.t)/1000);
-pointer.vx=clamp((q.x-pointer.px)/dt*.055,-18,18);
-pointer.vy=clamp((q.y-pointer.py)/dt*.055,-18,18);
+pointer.vx=clamp((q.x-pointer.px)/dt*.085,-28,28);
+pointer.vy=clamp((q.y-pointer.py)/dt*.085,-28,28);
 pointer.x=q.x; pointer.y=q.y; pointer.px=q.x; pointer.py=q.y; pointer.t=now;
 }
 function endPointer(e){ if(e) e.preventDefault(); pointer=null; wakeUI(); }
