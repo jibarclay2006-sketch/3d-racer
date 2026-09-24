@@ -16,7 +16,7 @@ let sim,W,H,dpr,sx,sy,background,liquidCanvas,liquidCtx,liquidImage;
 let motion=false,permissionPending=false,orientationTime=-Infinity,motionTime=-Infinity,linearTime=-Infinity;
 let gravity={x:0,y:1},linear={x:0,y:0},pointer=null;
 let lastTime=0,accumulator=0,frame=0,fpsTime=0,fps=60,lastTouch=performance.now();
-let tipTimer,hasInteracted=false,keyboard=new Set();
+let tipTimer,hasInteracted=false,hideAfterClose=false,keyboard=new Set();
 const DT=1/120;
 const angle=()=>screen.orientation?.angle??Number(window.orientation??0);
 const palette=Array.from({length:16},(_,i)=>`rgb(${Math.round(44+i*7)},${Math.round(186+i*4)},${Math.round(93+i*7)})`);
@@ -177,7 +177,9 @@ $('restore').onclick=wake;
 $('motion').onclick=enableMotion;
 $('settings').onclick=()=>{wake();panel.showModal();};$('close').onclick=()=>panel.close();
 panel.addEventListener('click',e=>{if(e.target===panel){const r=panel.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)panel.close();}});
-panel.addEventListener('close',wake);
+panel.addEventListener('close',()=>{
+ if(hideAfterClose){document.body.classList.add('immersed');lastTouch=-Infinity;hideAfterClose=false;}else wake();
+});
 $('level').value=prefs.level;$('level').onchange=e=>{prefs.level=e.target.value;sim.makeLevel(prefs.level);for(let i=0;i<sim.count;i++)sim.collide(i);save();wake();tip(prefs.level==='bottle'?'Just the water. No obstacles.':'Tip your phone to pour through the '+prefs.level+'.',2200);};
 function refill(){sim=new Liquid(sim.nx,sim.ny,prefs.level,prefs.fill/100);pointer=null;accumulator=0;}
 $('fill').value=prefs.fill;$('fill-value').textContent=prefs.fill+'%';
@@ -189,7 +191,7 @@ function setLook(look){prefs.look=look;for(const id of ['dots','water'])$(id).se
 for(const id of ['dots','water'])$(id).onclick=()=>setLook(id);setLook(prefs.look);
 $('reset').onclick=()=>{refill();panel.close();};
 $('splash').onclick=()=>{for(let i=0;i<sim.count;i++){const x=(sim.x[i]/sim.nx-.5);sim.vx[i]+=75;sim.vy[i]-=95*(1-x*x);}panel.close();};
-$('hide').onclick=()=>{panel.close();document.body.classList.add('immersed');lastTouch=-Infinity;};
+$('hide').onclick=()=>{hideAfterClose=true;panel.close();};
 $('fullscreen').onclick=async()=>{
  try{if(document.fullscreenElement)await document.exitFullscreen();else if(document.documentElement.requestFullscreen)await document.documentElement.requestFullscreen();else{panel.close();tip('For fullscreen on iPhone: Share → Add to Home Screen.',5000);}}
  catch{panel.close();tip('Fullscreen is unavailable here. On iPhone, use Share → Add to Home Screen.',5000);}
